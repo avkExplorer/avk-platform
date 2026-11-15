@@ -68,10 +68,10 @@ Norton re-signs HTTPS with its own root certificate, which only the Windows cert
 
 | Tool | Result | Fix |
 |---|---|---|
-| git, Docker pull, Terraform, cosign, restic, Python `avk`, pip | works as is | none |
+| git, Docker pull, Terraform, cosign, restic, Python `avk`, pip, GitHub CLI | works as is | none |
 | AWS CLI | fails (`CERTIFICATE_VERIFY_FAILED`) | user env var `AWS_CA_BUNDLE=%AVK_HOME%\certs\host-roots.pem` (set) |
 | Inside containers | fails (`unable to get local issuer certificate`) | mount the PEM read-only and point the container's tool at it. Tested: curl with `--cacert` / `CURL_CA_BUNDLE` (note: this curl ignores `SSL_CERT_FILE`). Untested until needed: `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` for Python, a truststore import for Java/Maven, `NODE_EXTRA_CA_CERTS` for Node |
-| GitHub CLI | not yet tested (needs `gh auth login`) | none expected |
+| GitHub CLI | works as is (signed in, scopes include `workflow`) | none |
 
 ## PC settings (Phase 0)
 
