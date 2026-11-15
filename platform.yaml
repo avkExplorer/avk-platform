@@ -1,0 +1,5 @@
+# Registry of apps on the AVK platform. Public: never put secrets or personal details here.
+# `avk` is the only writer once `avk new-app` exists (Phase 8). Rules: `avk validate` (cli/avk/config.py).
+domain: avkaiexplorer.com
+github_owner: avkExplorer
+apps: []

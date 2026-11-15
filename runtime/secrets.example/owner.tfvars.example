@@ -1,0 +1,3 @@
+# Private values Terraform needs; the real file stays in AVK_HOME\secrets\platform\.
+forward_to_mailbox = "you@example.com"
+alert_email        = "you@example.com"

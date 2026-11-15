@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avk"
+version = "0.1.0"
+description = "Command-line tool for the AVK app platform: checks, validation, stacks, deploys."
+requires-python = ">=3.12"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+avk = "avk.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["avk*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

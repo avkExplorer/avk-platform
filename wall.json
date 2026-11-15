@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "avk-platform",
+  "name": "AVK App Platform",
+  "description": "Deployment platform for avkaiexplorer.com: security-gated pipeline, local stg, tunnelled prod.",
+  "kind": "service",
+  "stage": "in-progress",
+  "progress": "Phase 0 built; reboot test pending",
+  "stack": ["Python", "Docker Compose", "Terraform", "Cloudflare", "GitHub Actions"],
+  "requires": ["python", "docker", "git"],
+  "setup": [
+    {"path": "cli/pyproject.toml", "hint": "the avk CLI source must be present"}
+  ],
+  "launch": {"cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "stg", "up"], "timeout": 120},
+  "stop": {"cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "stg", "down"], "timeout": 120},
+  "docs": "README.md",
+  "notes": "Needs AVK_HOME (C:\\avk) with its venv; see README. The stg stack and its index page on 4800 arrive in Phase 4.",
+  "checks": [
+    {"name": "Doctor", "cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "doctor"], "timeout": 180},
+    {"name": "platform.yaml", "cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "validate"], "timeout": 60},
+    {"name": "Unit tests", "cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "pytest", "-q", "-p", "no:cacheprovider"], "cwd": "cli", "timeout": 300}
+  ]
+}

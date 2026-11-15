@@ -1,0 +1,83 @@
+"""Entry point: `python -m avk <command>`."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import ssl
+import sys
+
+from avk import __version__, config, doctor
+
+
+def cmd_validate(_args) -> int:
+    try:
+        platform = config.load()
+    except Exception as exc:  # noqa: BLE001 - surface any parse problem to the user
+        print(f"fail  {config.PLATFORM_FILE.name}: {exc}")
+        return 1
+    errors, warnings = config.validate(platform)
+    for w in warnings:
+        print(f"warn  {w}")
+    for e in errors:
+        print(f"fail  {e}")
+    if errors:
+        return 1
+    print(f"ok    {config.PLATFORM_FILE.name}: {len(platform.apps)} app(s), domain {platform.domain}")
+    return 0
+
+
+def cmd_certs_refresh(_args) -> int:
+    """Export the Windows trusted roots (incl. Norton's) to a PEM for tools and containers."""
+    pem = config.avk_home() / "certs" / "host-roots.pem"
+    pem.parent.mkdir(parents=True, exist_ok=True)
+    certs = [ssl.DER_cert_to_PEM_cert(c) for store in ("ROOT", "CA")
+             for c, enc, _ in ssl.enum_certificates(store) if enc == "x509_asn"]  # type: ignore[attr-defined]
+    pem.write_text("".join(dict.fromkeys(certs)), encoding="ascii")
+    print(f"ok    wrote {len(set(certs))} certificates to {pem}")
+    return 0
+
+
+def _log(event: str, **fields) -> None:
+    logs = config.avk_home() / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    line = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "event": event, **fields}
+    with (logs / "avk.log").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(line) + "\n")
+
+
+def cmd_stack(args) -> int:
+    # Placeholder until the stacks exist (prod: Phase 1 tunnel, Phase 4 apps; stg: Phase 4).
+    _log(f"{args.env}.{args.action}", note="stub until Phase 1/4")
+    print(f"{args.env} {args.action}: the {args.env} stack is built in a later phase; nothing to do yet (logged).")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="avk", description="AVK app platform tool")
+    p.add_argument("--version", action="version", version=f"avk {__version__}")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("doctor", help="check this PC is ready").set_defaults(func=doctor.main)
+    sub.add_parser("validate", help="check platform.yaml").set_defaults(func=cmd_validate)
+
+    certs = sub.add_parser("certs", help="CA bundle for tools behind Norton").add_subparsers(dest="action", required=True)
+    certs.add_parser("refresh").set_defaults(func=cmd_certs_refresh)
+
+    for env in ("stg", "prod"):
+        sp = sub.add_parser(env, help=f"{env} stack").add_subparsers(dest="action", required=True)
+        for action in ("up", "down", "status"):
+            a = sp.add_parser(action)
+            a.add_argument("app", nargs="?")
+            a.set_defaults(func=cmd_stack, env=env)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args.func(args) or 0)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

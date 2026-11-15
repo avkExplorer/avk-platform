@@ -1,0 +1,37 @@
+# Private planning docs (kept locally and backed up under AVK_HOME\private; not published)
+/Deployment_PLAN.md
+/BUDGET.md
+/specs/
+/archive/
+
+# Secrets and state never enter this public repo
+*.env
+!*.env.example
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+crash.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Java / Node (app template, later phases)
+target/
+node_modules/
+
+# Editors and OS
+.vscode/
+.idea/
+*.iml
+Thumbs.db
+.DS_Store
