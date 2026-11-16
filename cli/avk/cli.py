@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, doctor
+from avk import __version__, config, doctor, tf
 
 
 def cmd_validate(_args) -> int:
@@ -64,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     certs = sub.add_parser("certs", help="CA bundle for tools behind Norton").add_subparsers(dest="action", required=True)
     certs.add_parser("refresh").set_defaults(func=cmd_certs_refresh)
+
+    tfp = sub.add_parser("tf", help="Terraform (in Docker) for the Cloudflare edge")
+    tfp.add_argument("action", choices=["init", "validate", "fmt", "plan", "apply", "output"])
+    tfp.add_argument("--yes", action="store_true", help="apply: confirm the reviewed saved plan")
+    tfp.set_defaults(func=tf.main)
 
     for env in ("stg", "prod"):
         sp = sub.add_parser(env, help=f"{env} stack").add_subparsers(dest="action", required=True)

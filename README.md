@@ -68,7 +68,8 @@ Norton re-signs HTTPS with its own root certificate, which only the Windows cert
 
 | Tool | Result | Fix |
 |---|---|---|
-| git, Docker pull, Terraform, cosign, restic, Python `avk`, pip, GitHub CLI | works as is | none |
+| git, Docker pull, cosign, restic, Python `avk`, pip, GitHub CLI | works as is | none |
+| Terraform on the host | downloads work, but **every provider fails to load**: Norton intercepts Terraform's localhost TLS to its plugins (`x509: certificate signed by unknown authority`) | run Terraform in Docker: `avk tf ...` uses `hashicorp/terraform:1.17.1` with the CA bundle mounted |
 | AWS CLI | fails (`CERTIFICATE_VERIFY_FAILED`) | user env var `AWS_CA_BUNDLE=%AVK_HOME%\certs\host-roots.pem` (set) |
 | Inside containers | fails (`unable to get local issuer certificate`) | mount the PEM read-only and point the container's tool at it. Tested: curl with `--cacert` / `CURL_CA_BUNDLE` (note: this curl ignores `SSL_CERT_FILE`). Untested until needed: `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` for Python, a truststore import for Java/Maven, `NODE_EXTRA_CA_CERTS` for Node |
 | GitHub CLI | works as is (signed in, scopes include `workflow`) | none |
@@ -82,6 +83,20 @@ Norton re-signs HTTPS with its own root certificate, which only the Windows cert
   it is not running. Prod therefore comes back only after the owner logs in.
 - Disk encryption: BitLocker reports no protection on C:. Check Settings > Privacy & security > Device
   encryption (owner decision; not changed).
+
+## Cloudflare edge (`infra/terraform`)
+
+Terraform manages the zone settings (HTTPS only, TLS 1.2+, short HSTS), the `avk-prod` tunnel and its
+ingress, one proxied CNAME per host in `platform.yaml`, the `www` → apex redirect, and the one free
+rate-limiting rule. State lives in `%AVK_HOME%\tfstate` because it holds the tunnel secret.
+
+```powershell
+& $avk -m avk tf plan          # saves a plan; review it
+& $avk -m avk tf apply --yes   # applies exactly that plan (refused if older than 1 hour)
+```
+
+Secrets: `%AVK_HOME%\secrets\platform\cloudflare.env` (keys in `runtime/secrets.example/`). After an apply,
+the tunnel token is written to `%AVK_HOME%\secrets\platform\tunnel.token`.
 
 ## Ports
 

@@ -2,4 +2,9 @@
 # `avk` is the only writer once `avk new-app` exists (Phase 8). Rules: `avk validate` (cli/avk/config.py).
 domain: avkaiexplorer.com
 github_owner: avkExplorer
-apps: []
+apps:
+  - name: hello              # pilot; a test container until the real app lands (Phase 3/4)
+    type: web
+    stg_port: 4820
+    hosts: [hello.avkaiexplorer.com]
+    status: stg
