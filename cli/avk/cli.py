@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, doctor, tf
+from avk import __version__, config, doctor, prod, tf
 
 
 def cmd_validate(_args) -> int:
@@ -70,12 +70,15 @@ def build_parser() -> argparse.ArgumentParser:
     tfp.add_argument("--yes", action="store_true", help="apply: confirm the reviewed saved plan")
     tfp.set_defaults(func=tf.main)
 
-    for env in ("stg", "prod"):
-        sp = sub.add_parser(env, help=f"{env} stack").add_subparsers(dest="action", required=True)
-        for action in ("up", "down", "status"):
-            a = sp.add_parser(action)
-            a.add_argument("app", nargs="?")
-            a.set_defaults(func=cmd_stack, env=env)
+    prodp = sub.add_parser("prod", help="prod stack (tunnel + Traefik)").add_subparsers(dest="action", required=True)
+    for action in ("up", "down", "status"):
+        prodp.add_parser(action).set_defaults(func=prod.main)
+
+    stgp = sub.add_parser("stg", help="stg stack (Phase 4)").add_subparsers(dest="action", required=True)
+    for action in ("up", "down", "status"):
+        a = stgp.add_parser(action)
+        a.add_argument("app", nargs="?")
+        a.set_defaults(func=cmd_stack, env="stg")
     return p
 
 

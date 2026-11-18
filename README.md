@@ -3,7 +3,8 @@
 A reusable deployment platform for apps on avkaiexplorer.com. Each app gets a local non-prod environment, a
 prod hostname, a security-gated GitHub Actions pipeline, a database, login, business email and legal pages.
 
-**Status:** Phase 0 (prerequisites) built; reboot test pending. Phases: foundation (DNS and tunnel), email, pipeline, runtime, auth,
+**Status:** Phase 0 built (reboot test pending). Phase 1 in progress: the tunnel and `https://hello.avkaiexplorer.com`
+are live; the apex landing page and status placeholder are next. Phases: foundation (DNS and tunnel), email, pipeline, runtime, auth,
 legal, observability, onboarding, AWS lab.
 
 ## How it is shaped
@@ -97,6 +98,15 @@ rate-limiting rule. State lives in `%AVK_HOME%\tfstate` because it holds the tun
 
 Secrets: `%AVK_HOME%\secrets\platform\cloudflare.env` (keys in `runtime/secrets.example/`). After an apply,
 the tunnel token is written to `%AVK_HOME%\secrets\platform\tunnel.token`.
+
+## Prod stack (`runtime/compose.prod.yaml`)
+
+`avk prod up|down|status` runs `cloudflared` (outbound tunnel, token read from a secret file), `traefik`
+(routes by Host header, file provider, no Docker socket) and a `whoami` test target on the private `avk-prod`
+network. Images are pinned by digest; containers are read-only, drop all capabilities and have memory limits.
+Traefik is published only on `127.0.0.1:4900`. Routes live in `%AVK_HOME%\state\traefik`.
+Checked 2026-11-17: tunnel healthy with 4 connections; `https://hello.avkaiexplorer.com` answers from this PC;
+HTTP redirects to HTTPS; `www` redirects to the apex keeping path and query; DNS shows only Cloudflare addresses.
 
 ## Ports
 

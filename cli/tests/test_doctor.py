@@ -51,9 +51,9 @@ def test_main_exit_code(monkeypatch, capsys):
 
 def test_stack_stub_logs(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("AVK_HOME", str(tmp_path))
-    assert cli.main(["prod", "up"]) == 0
+    assert cli.main(["stg", "up"]) == 0
     log = (tmp_path / "logs" / "avk.log").read_text(encoding="utf-8")
-    assert '"event": "prod.up"' in log
+    assert '"event": "stg.up"' in log
 
 
 def test_validate_command_ok(capsys):
