@@ -116,20 +116,36 @@ resource "cloudflare_ruleset" "redirects" {
   kind    = "zone"
   phase   = "http_request_dynamic_redirect"
 
-  rules = [{
-    description = "www to apex"
-    expression  = "(http.host eq \"www.${local.domain}\")"
-    action      = "redirect"
-    action_parameters = {
-      from_value = {
-        status_code           = 301
-        preserve_query_string = true
-        target_url = {
-          expression = "concat(\"https://${local.domain}\", http.request.uri.path)"
+  rules = [
+    {
+      description = "www to apex"
+      expression  = "(http.host eq \"www.${local.domain}\")"
+      action      = "redirect"
+      action_parameters = {
+        from_value = {
+          status_code           = 301
+          preserve_query_string = true
+          target_url = {
+            expression = "concat(\"https://${local.domain}\", http.request.uri.path)"
+          }
         }
       }
-    }
-  }]
+    },
+    {
+      # The status placeholder is one page on the shared Pages project; send the status host's root to it.
+      description = "status root to status page"
+      expression  = "(http.host eq \"status.${local.domain}\" and http.request.uri.path eq \"/\")"
+      action      = "redirect"
+      action_parameters = {
+        from_value = {
+          status_code = 302
+          target_url = {
+            value = "https://status.${local.domain}/status/"
+          }
+        }
+      }
+    },
+  ]
 }
 
 # ------------------------------------------------------------------------------------------ rate limiting

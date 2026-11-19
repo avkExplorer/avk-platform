@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, doctor, prod, tf
+from avk import __version__, config, doctor, landing, prod, tf
 
 
 def cmd_validate(_args) -> int:
@@ -73,6 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     prodp = sub.add_parser("prod", help="prod stack (tunnel + Traefik)").add_subparsers(dest="action", required=True)
     for action in ("up", "down", "status"):
         prodp.add_parser(action).set_defaults(func=prod.main)
+
+    landp = sub.add_parser("landing", help="apex/status placeholder pages on Cloudflare Pages").add_subparsers(dest="action", required=True)
+    landp.add_parser("deploy").set_defaults(func=landing.main)
 
     stgp = sub.add_parser("stg", help="stg stack (Phase 4)").add_subparsers(dest="action", required=True)
     for action in ("up", "down", "status"):
