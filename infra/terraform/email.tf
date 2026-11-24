@@ -15,6 +15,10 @@ variable "forward_to_mailbox" {
 # Turns Email Routing on for the apex; Cloudflare adds its MX records and SPF include.
 resource "cloudflare_email_routing_settings" "root" {
   zone_id = var.zone_id
+
+  lifecycle {
+    ignore_changes = [support_subaddress] # provider reports false then null: perpetual diff otherwise
+  }
 }
 
 resource "cloudflare_email_routing_address" "owner" {
