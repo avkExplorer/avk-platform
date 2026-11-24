@@ -54,9 +54,18 @@ def load_secrets(path: Path | None = None) -> dict[str, str]:
     return values
 
 
+def owner_vars() -> dict[str, str]:
+    """Private values (mailbox addresses) from secrets/platform/owner.tfvars, passed as TF_VAR_<name>."""
+    path = config.avk_home() / "secrets" / "platform" / "owner.tfvars"
+    if not path.is_file():
+        return {}
+    return {f"TF_VAR_{k}": v for k, v in parse_env_file(path.read_text(encoding="utf-8")).items()
+            if v and "example.com" not in v}
+
+
 def container_env(secrets: dict[str, str]) -> dict[str, str]:
     """Variables passed into the container by name only."""
-    return {
+    return {**owner_vars(),
         "CLOUDFLARE_API_TOKEN": secrets["CLOUDFLARE_API_TOKEN"],
         "TF_VAR_account_id": secrets["CLOUDFLARE_ACCOUNT_ID"],
         "TF_VAR_zone_id": secrets["CLOUDFLARE_ZONE_ID"],
@@ -66,6 +75,7 @@ def container_env(secrets: dict[str, str]) -> dict[str, str]:
         "TF_DATA_DIR": "/state/.terraform",
         "TF_PLUGIN_CACHE_DIR": "/state/plugin-cache",
     }
+
 
 
 def docker_argv(tf_args: list[str], env_names: list[str]) -> list[str]:
