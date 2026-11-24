@@ -1,0 +1,174 @@
+# Reusable security and quality gates for AVK apps (Java 21 / Maven). Called by an app's own thin workflows:
+# on every pull request (read-only token) and again on every push to main (release.yml repeats these gates).
+#
+# Every gate runs; failures are collected and enforced at the end so one run shows everything that is wrong.
+# Scanners run as containers pinned by digest (fewer third-party actions to trust); actions are pinned by commit.
+name: ci (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        type: string
+        default: "21"
+      coverage-minimum:
+        description: Minimum line coverage as a ratio (0.70 = 70%).
+        type: string
+        default: "0.70"
+      license-gate:
+        description: "fail = a forbidden licence fails the run; flag = it is only reported."
+        type: string
+        default: "fail"
+
+permissions: {}
+
+env:
+  TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  CHECKOV_IMAGE: bridgecrew/checkov@sha256:89a4c477508225cdc3ed8a23d15c7e0d9d3029bc8ae192b7f113a6ff5f210c94
+  # Licences that are fine for a service that only links them dynamically (LGPL) or carries the Classpath Exception.
+  # GPL and AGPL without an exception are not in this list, so they fail the licence gate.
+  ALLOWED_LICENSES: LGPL-2.1-only,LGPL-2.1-or-later,LGPL-3.0-only,LGPL-3.0-or-later,GPL-2.0-with-classpath-exception,GPL-2.0-only WITH Classpath-exception-2.0,GPL-3.0-with-GCC-exception
+
+jobs:
+  gates:
+    name: gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # CodeQL results upload (skipped for fork pull requests)
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+
+      - name: Build, unit and API tests, coverage gate
+        id: build
+        continue-on-error: true
+        env:
+          COVERAGE_MINIMUM: ${{ inputs.coverage-minimum }}
+        run: ./mvnw -B -ntp verify "-Dcoverage.minimum=$COVERAGE_MINIMUM"
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports
+            target/site/jacoco
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Secret scan (gitleaks)
+        id: secrets
+        continue-on-error: true
+        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --redact --no-banner -v /repo
+
+      - name: Dependency scan (Trivy, fixable High and Critical)
+        id: deps
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -v "$HOME/.m2:/root/.m2:ro" -v trivy-cache:/root/.cache \
+            "$TRIVY_IMAGE" fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress /src
+
+      - name: Dockerfile and workflow scan (Checkov)
+        id: iac
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src:ro" "$CHECKOV_IMAGE" -d /src \
+            --framework dockerfile,github_actions --compact --quiet --skip-download
+
+      - name: Licence scan (Trivy)
+        id: license
+        continue-on-error: true
+        env:
+          LICENSE_GATE: ${{ inputs.license-gate }}
+        run: |
+          code=1; [ "$LICENSE_GATE" = "flag" ] && code=0
+          docker run --rm -v "$PWD:/src:ro" -v "$HOME/.m2:/root/.m2:ro" -v trivy-cache:/root/.cache \
+            "$TRIVY_IMAGE" fs --scanners license --severity HIGH,CRITICAL --ignored-licenses "$ALLOWED_LICENSES" \
+            --exit-code "$code" --no-progress /src
+
+      - name: Build the image (not pushed)
+        id: imagebuild
+        continue-on-error: true
+        run: docker build -t app:ci .
+
+      - name: Image scan (Trivy, fixable High and Critical)
+        id: imagescan
+        if: steps.imagebuild.outcome == 'success'
+        continue-on-error: true
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache \
+            "$TRIVY_IMAGE" image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress app:ci
+
+      - name: CodeQL initialise
+        id: codeql_init
+        continue-on-error: true
+        uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          languages: java-kotlin
+          build-mode: none
+
+      - name: CodeQL analyse
+        id: codeql
+        if: steps.codeql_init.outcome == 'success'
+        continue-on-error: true
+        uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          category: /language:java-kotlin
+          output: sarif-results
+          # Fork pull requests have a read-only token and cannot upload results; the SARIF is still checked below.
+          upload: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'always' || 'never' }}
+
+      - name: CodeQL result check (fail on error-level findings)
+        id: sarif
+        if: steps.codeql.outcome == 'success'
+        continue-on-error: true
+        run: |
+          count=$(cat sarif-results/*.sarif | jq '[.runs[].results[]? | select(.level == "error")] | length')
+          echo "error-level CodeQL findings: $count"
+          [ "$count" -eq 0 ]
+
+      - name: Summary and enforcement
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          SECRETS: ${{ steps.secrets.outcome }}
+          DEPS: ${{ steps.deps.outcome }}
+          IAC: ${{ steps.iac.outcome }}
+          LICENSE: ${{ steps.license.outcome }}
+          IMAGEBUILD: ${{ steps.imagebuild.outcome }}
+          IMAGESCAN: ${{ steps.imagescan.outcome }}
+          CODEQL_INIT: ${{ steps.codeql_init.outcome }}
+          CODEQL: ${{ steps.codeql.outcome }}
+          SARIF: ${{ steps.sarif.outcome }}
+        run: |
+          fail=0
+          row() { # gate, tool, outcome
+            icon="pass"; [ "$3" = "success" ] || icon="FAIL ($3)"; [ "$3" = "success" ] || fail=1
+            echo "| $1 | $2 | $icon |" >> "$GITHUB_STEP_SUMMARY"
+          }
+          { echo "### Gates"; echo; echo "| Gate | Tool | Result |"; echo "|---|---|---|"; } >> "$GITHUB_STEP_SUMMARY"
+          row "Build, tests, coverage" "Maven, JaCoCo" "$BUILD"
+          row "Secrets" "gitleaks" "$SECRETS"
+          row "Dependencies" "Trivy" "$DEPS"
+          row "Dockerfile and workflows" "Checkov" "$IAC"
+          row "Licences" "Trivy" "$LICENSE"
+          row "Image build" "docker" "$IMAGEBUILD"
+          row "Image scan" "Trivy" "${IMAGESCAN:-skipped}"
+          row "Static analysis" "CodeQL" "$CODEQL"
+          row "Static analysis results" "CodeQL SARIF" "${SARIF:-skipped}"
+          [ "$CODEQL_INIT" = "success" ] || fail=1
+          exit $fail
