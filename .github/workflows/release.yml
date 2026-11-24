@@ -1,0 +1,240 @@
+# Reusable release workflow (identity A). Builds the image ONCE, pushes it by digest, signs it, attaches an SBOM,
+# proves the exact digest in a throwaway ci stack, then verifies the signature with the exact identity the
+# deployer will use. It never deploys and never approves: approve.yml (identity B) does that after the owner says yes.
+#
+# Called by the app's own release workflow AFTER the ci gates have passed on the merge commit.
+name: release (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        type: string
+        required: true
+      java-version:
+        type: string
+        default: "21"
+      expected-identity:
+        description: "Exact certificate identity the build signature must carry, e.g. https://github.com/<owner>/avk-platform/.github/workflows/release.yml@refs/heads/main"
+        type: string
+        required: true
+    outputs:
+      image:
+        description: Image repository without tag or digest
+        value: ${{ jobs.build.outputs.image }}
+      digest:
+        description: Image digest (sha256:...)
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions: {}
+
+env:
+  COSIGN_VERSION: v3.1.4
+  SYFT_IMAGE: anchore/syft@sha256:e97e20b6e6d1699c60296b66ab337941724f9bd06ac279d893eda89601fc4b2a
+  ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  build:
+    name: build, sign, sbom
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io (this job only)
+      id-token: write # keyless signing (this job only)
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+
+      - name: Build and test the jar that will be shipped
+        run: ./mvnw -B -ntp verify
+
+      - name: Build and push the image
+        id: push
+        env:
+          APP: ${{ inputs.app-name }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          image="ghcr.io/${OWNER,,}/$APP"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker build -t "$image:$SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$REPO" \
+            --label "org.opencontainers.image.revision=$SHA" .
+          docker push "$image:$SHA"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$image:$SHA")
+          digest="${digest#*@}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed $image@$digest"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign the image digest (keyless)
+        env:
+          REF: ${{ steps.push.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$REF"
+
+      - name: SBOM (Syft) and attestation
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+          SHA: ${{ github.sha }}
+          REF: ${{ steps.push.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$SYFT_IMAGE" \
+            "docker:$IMAGE:$SHA" -o cyclonedx-json > sbom.cdx.json
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$REF"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 90
+
+  verify-ci:
+    name: verify digest in ci stack
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull the exact digest
+        env:
+          REF: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker pull "$REF"
+
+      - name: Start the ci stack (secrets generated for this run only)
+        env:
+          APP_IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+        run: |
+          export APP_IMAGE
+          POSTGRES_PASSWORD=$(openssl rand -hex 16); export POSTGRES_PASSWORD
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_ENV"
+          echo "APP_IMAGE=$APP_IMAGE" >> "$GITHUB_ENV"
+          docker compose -f ci/compose.ci.yaml up -d --wait --wait-timeout 120 db
+          docker compose -f ci/compose.ci.yaml run --rm migrate
+          docker compose -f ci/compose.ci.yaml up -d --wait --wait-timeout 180 app mailpit
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Browser smoke, API and accessibility tests (Playwright)
+        id: e2e
+        working-directory: e2e
+        env:
+          BASE_URL: http://127.0.0.1:8080
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Security baseline scan (ZAP, fail on High)
+        id: zap
+        if: always()
+        env:
+          ZAP_IMAGE: ghcr.io/zaproxy/zaproxy@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+        run: |
+          mkdir -p zap && chmod 777 zap
+          net=$(docker inspect ci-app-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          docker run --rm --network "$net" -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t http://app:8080 -J zap.json -r zap.html -I || true
+          high=$(jq '[.site[].alerts[]? | select(.riskcode == "3")] | length' zap/zap.json)
+          echo "ZAP high-risk alerts: $high"
+          [ "$high" -eq 0 ]
+
+      - name: Collect stack logs
+        if: always()
+        run: docker compose -f ci/compose.ci.yaml logs --no-color > ci-stack.log 2>&1 || true
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-stack-reports
+          path: |
+            e2e/playwright-report
+            e2e/allure-results
+            zap/zap.json
+            zap/zap.html
+            ci-stack.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f ci/compose.ci.yaml down -v
+
+  verify-signature:
+    name: verify signature with the deployer's identity
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: cosign verify (exact identity, no wildcards)
+        env:
+          REF: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          IDENTITY: ${{ inputs.expected-identity }}
+          REPO: ${{ github.repository }}
+        run: |
+          cosign verify "$REF" \
+            --certificate-oidc-issuer "$ISSUER" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-github-workflow-repository "$REPO" \
+            --output json | tee verify.json | jq '.[0].optional | {Issuer, Subject, githubWorkflowRepository, githubWorkflowRef}'
+          # The same check with a different identity must FAIL, otherwise the check proves nothing.
+          if cosign verify "$REF" --certificate-oidc-issuer "$ISSUER" \
+               --certificate-identity "https://github.com/someone-else/repo/.github/workflows/release.yml@refs/heads/main" \
+               > /dev/null 2>&1; then
+            echo "A wrong identity was accepted: verification is not strict"; exit 1
+          fi
+          echo "wrong identity correctly rejected"
+
+      - name: Upload verification output
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signature-verification
+          path: verify.json
+          retention-days: 90

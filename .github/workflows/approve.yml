@@ -1,0 +1,80 @@
+# Reusable approval workflow (identity B). Runs as the last job of an app's release run, and ONLY after the owner
+# approves the `prod` environment. It then signs an approval attestation for the exact image digest (keyless) and
+# creates a GitHub Deployment whose only purpose is to wake the deployer on the owner's PC.
+#
+# The Deployment is a trigger, never evidence: the deployer trusts only the signed attestation made here, which no
+# other workflow can produce because the signing identity is this file at a specific ref.
+# `deployment: false` stops GitHub creating its own Deployment object when the environment gate is passed.
+name: approve (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        type: string
+        required: true
+      image:
+        description: Image repository (no tag, no digest)
+        type: string
+        required: true
+      digest:
+        description: Image digest, sha256:...
+        type: string
+        required: true
+
+permissions: {}
+
+env:
+  COSIGN_VERSION: v3.1.4
+  PREDICATE_TYPE: https://avkaiexplorer.com/attestations/prod-approval/v1
+
+jobs:
+  approve:
+    name: approve for prod
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: prod
+      deployment: false
+    permissions:
+      contents: read
+      packages: read
+      id-token: write # keyless signing of the approval
+      deployments: write # create the trigger Deployment
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign the approval attestation
+        env:
+          APP: ${{ inputs.app-name }}
+          IMAGE: ${{ inputs.image }}
+          DIGEST: ${{ inputs.digest }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          jq -n --arg app "$APP" --arg digest "$DIGEST" --arg commit "$SHA" --arg run "$RUN_URL" \
+            --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{app: $app, digest: $digest, commit: $commit, run_url: $run, approved_at: $at}' > approval.json
+          cat approval.json
+          cosign attest --yes --type "$PREDICATE_TYPE" --predicate approval.json "$IMAGE@$DIGEST"
+
+      - name: Create the Deployment that wakes the deployer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          APP: ${{ inputs.app-name }}
+          IMAGE: ${{ inputs.image }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          jq -n --arg ref "$SHA" --arg app "$APP" --arg image "$IMAGE" --arg digest "$DIGEST" \
+            '{ref: $ref, environment: "prod", auto_merge: false, required_contexts: [],
+              description: ("approved " + $app),
+              payload: {app: $app, image: $image, digest: $digest}}' > deployment.json
+          gh api -X POST "repos/$REPO/deployments" --input deployment.json --jq '"deployment id: \(.id)"'
