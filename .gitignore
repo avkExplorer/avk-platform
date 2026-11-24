@@ -36,3 +36,4 @@ node_modules/
 *.iml
 Thumbs.db
 .DS_Store
+/SETUP_GUIDE.md
