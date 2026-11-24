@@ -36,3 +36,35 @@ Edit `landing/`, then `& $avk -m avk landing deploy` (uploads to the `avk-landin
 
 `docker logs avk-prod-cloudflared-1 --tail 50`. A bad or rotated tunnel token shows as an auth error: re-run
 `avk tf apply` (rewrites `secrets\platform\tunnel.token`), then `avk prod up`.
+
+## Business email
+
+Inbound: Cloudflare Email Routing forwards `hello`, `support`, `billing`, `security`, `privacy`, `admin`,
+`postmaster`, `abuse` and `dmarc` to the owner's mailbox; any other address is dropped. Outbound for apps:
+Resend, from `noreply@notify.avkaiexplorer.com`. Check the DNS side any time: `& $avk -m avk mail check`.
+
+### Rotate the mail credentials
+
+1. Resend dashboard > API Keys: create a new key with **Sending access** limited to `notify.avkaiexplorer.com`.
+2. Run `tools\set-mail-secret.ps1` (hidden input; writes `%AVK_HOME%\secrets\prod\platform-mail.env`).
+3. Send one test (`avk mail test-send --to <your address> --yes`) and confirm it arrives.
+4. Delete the old key in Resend.
+
+### DMARC timeline
+
+The record is `p=none` (monitor only) with reports to `dmarc@`. Tighten it only after reports show real mail passing.
+
+| Step | When | Check before moving on |
+|---|---|---|
+| `p=none` | now | `avk mail check` ok; test mail shows spf, dkim and dmarc = pass |
+| `p=quarantine; pct=25`, then 100 | after 2 to 4 weeks of clean reports | every legitimate sender (Cloudflare forwarding, Resend, any new tool) passes SPF or DKIM aligned |
+| `p=reject` | after 2 more clean weeks | same check; keep `rua` reports flowing |
+
+Edit the `_dmarc` record in `infra/terraform/email.tf`, `avk tf plan`, apply. Adding any new sender later needs its
+SPF include or DKIM first, or its mail will be quarantined.
+
+### Suppression list
+
+Resend automatically stops sending to addresses that bounced or complained. View them in the Resend dashboard
+(Suppressions). Never re-add one by hand. A webhook receiver for bounces is a follow-up for the first app that
+sends mail.

@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, doctor, landing, prod, tf
+from avk import __version__, config, doctor, landing, mail, prod, tf
 
 
 def cmd_validate(_args) -> int:
@@ -76,6 +76,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     landp = sub.add_parser("landing", help="apex/status placeholder pages on Cloudflare Pages").add_subparsers(dest="action", required=True)
     landp.add_parser("deploy").set_defaults(func=landing.main)
+
+    mailp = sub.add_parser("mail", help="business email DNS checks").add_subparsers(dest="action", required=True)
+    mailp.add_parser("check").set_defaults(func=mail.main)
+    tsp = mailp.add_parser("test-send", help="send ONE real test email (needs --yes)")
+    tsp.add_argument("--to", required=True)
+    tsp.add_argument("--yes", action="store_true")
+    tsp.set_defaults(func=mail.test_send)
 
     stgp = sub.add_parser("stg", help="stg stack (Phase 4)").add_subparsers(dest="action", required=True)
     for action in ("up", "down", "status"):

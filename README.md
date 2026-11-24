@@ -120,4 +120,12 @@ All bound to `127.0.0.1`. Platform: 4800 stg index, 4810 Keycloak (stg), 4811/48
 | Domain | renewal yearly | site and email stop | |
 | Cloudflare | 1 rate-limiting rule; first-level subdomain TLS | paid add-ons | |
 | GitHub | free gates on public repos only | need paid plan | |
+| Cloudflare Email Routing | free; 200 rules and 200 destination addresses | n/a at this scale | 2026-11-24 |
+| Resend (outbound mail) | free: 3,000 mails/month, 100/day, 3 domains | Pro $20/month | 2026-11-24 |
 | (more rows added as each phase signs up for a service) | | | |
+
+## Email
+
+Inbound business addresses forward through Cloudflare Email Routing; app mail is sent through Resend from
+`notify.avkaiexplorer.com`. `avk mail check` validates MX, SPF, DKIM and DMARC. Templates live in `email/templates/`
+(Jinja2, transactional only). Follow-up: add a bounce/complaint webhook receiver with the first app that sends mail.

@@ -1,0 +1,2 @@
+{% extends "base.html.j2" %}
+{% block body %}<p>Hi {{ first_name }},</p><p>Please confirm your email address to finish setting up your account. The link works for {{ expires_in }}.</p><p style="margin:24px 0;"><a href="{{ verify_url }}" style="background:#2457d6;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:6px;display:inline-block;">Confirm email</a></p><p style="font-size:14px;color:#5a6472;">If you did not create an account, you can ignore this email.</p>{% endblock %}

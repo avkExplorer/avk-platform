@@ -1,0 +1,10 @@
+{% extends "base.txt.j2" %}
+{% block body %}
+Hi {{ first_name }},
+
+Thank you for your order {{ order_number }}.
+
+{% for item in items %}{{ item.name }} x {{ item.quantity }}  {{ item.total }}
+{% endfor %}
+Total: {{ total }}
+{% endblock %}

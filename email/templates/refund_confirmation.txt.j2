@@ -1,0 +1,6 @@
+{% extends "base.txt.j2" %}
+{% block body %}
+Hi {{ first_name }},
+
+We have refunded {{ refund_amount }} for order {{ order_number }}. It can take {{ days }} business days to appear on your statement.
+{% endblock %}

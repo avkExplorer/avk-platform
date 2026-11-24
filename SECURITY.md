@@ -2,8 +2,7 @@
 
 ## Reporting
 
-A `security@` address arrives with Phase 2 (email). Until then, open a private security advisory on the
-GitHub repository once it exists.
+Email `security@avkaiexplorer.com`. A private GitHub security advisory also works once the repository exists.
 
 ## Scans
 
