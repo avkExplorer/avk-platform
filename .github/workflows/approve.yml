@@ -38,7 +38,7 @@ jobs:
       deployment: false
     permissions:
       contents: read
-      packages: read
+      packages: write # cosign stores the attestation in the registry next to the image
       id-token: write # keyless signing of the approval
       deployments: write # create the trigger Deployment
     steps:
