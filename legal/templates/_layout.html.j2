@@ -1,0 +1,23 @@
+{# Shared page frame. Not legal advice: every page built on this frame says so, and says it needs review. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} | {{ f('app_title') }}</title>
+<link rel="stylesheet" href="{{ base_path }}/legal.css">
+</head>
+<body>
+{% if not reviewed %}
+<div class="draft-banner" role="note"><strong>DRAFT – needs review by a qualified attorney/CPA.</strong>
+This page is a template, not legal advice.</div>
+{% endif %}
+<header class="site-header"><a href="/">{{ f('app_title') }}</a></header>
+<main id="main">
+<h1>{{ title }}</h1>
+{% block body %}{% endblock %}
+</main>
+{% include "_footer.html.j2" %}
+<script src="{{ base_path }}/consent.js" data-mode="{{ consent_mode }}" defer></script>
+</body>
+</html>

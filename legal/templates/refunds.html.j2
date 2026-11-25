@@ -1,0 +1,24 @@
+{# Refund, return and cancellation policy draft. Not legal advice; needs attorney review. #}
+{% extends "_layout.html.j2" %}
+{% block body %}
+<p>Effective: {{ f('effective_date') }}</p>
+<h2>Refunds</h2>
+<p>{{ f('refund_terms') }}</p>
+{% if physical_goods %}
+<h2>Returns</h2>
+<p>{{ f('return_terms') }}</p>
+{% endif %}
+{% if subscriptions %}
+<h2>Subscriptions and automatic renewal</h2>
+<p>Subscriptions renew automatically at the end of each billing period at the price shown when you subscribed, and we charge the payment
+method you gave us, until you cancel. We will remind you before a renewal where the law requires it.</p>
+<h3>How to cancel</h3>
+<ol>
+<li>Sign in and open your account page, then choose &ldquo;Manage subscription&rdquo;{% if cancellation_steps %}: {{ cancellation_steps }}{% endif %}.</li>
+<li>Or write to <a href="mailto:{{ f('support_email') }}">{{ f('support_email') }}</a> and we will cancel it for you.</li>
+</ol>
+<p>Cancelling stops future charges. You keep access until the end of the period you already paid for, unless stated otherwise at purchase.</p>
+{% endif %}
+<h2>Contact</h2>
+<p>For any refund or cancellation question: <a href="mailto:{{ f('support_email') }}">{{ f('support_email') }}</a>.</p>
+{% endblock %}

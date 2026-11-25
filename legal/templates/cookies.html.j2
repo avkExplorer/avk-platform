@@ -1,0 +1,30 @@
+{# Cookie Notice draft. Not legal advice; needs attorney review. #}
+{% extends "_layout.html.j2" %}
+{% block body %}
+<p>Effective: {{ f('effective_date') }}</p>
+<h2>Essential cookies (always on)</h2>
+<p>These make the site work and cannot be switched off. They are not used for tracking or advertising.</p>
+<table>
+<caption>Essential cookies</caption>
+<thead><tr><th scope="col">Cookie</th><th scope="col">Set by</th><th scope="col">Purpose</th><th scope="col">Lasts</th></tr></thead>
+<tbody>
+{% if accounts %}
+<tr><td><code>JSESSIONID</code></td><td>{{ f('app_title') }}</td><td>Keeps you signed in and protects forms against forgery (CSRF)</td><td>Until you sign out or 30 minutes idle</td></tr>
+<tr><td><code>AUTH_SESSION_ID</code>, <code>KC_RESTART</code></td><td>Login service (auth.avkaiexplorer.com)</td><td>Tracks a sign-in that is in progress</td><td>Until sign-in ends</td></tr>
+<tr><td><code>KEYCLOAK_IDENTITY</code>, <code>KEYCLOAK_SESSION</code></td><td>Login service</td><td>Keeps your login session</td><td>Until you sign out or the session ends</td></tr>
+{% else %}
+<tr><td colspan="4">None are set by this site.</td></tr>
+{% endif %}
+</tbody>
+</table>
+<p>Your cookie choice is remembered in your browser&rsquo;s local storage under the name <code>avk_consent</code>, not in a cookie.</p>
+
+<h2>Optional cookies and scripts</h2>
+{% if analytics %}
+<p>With your consent we use: {{ analytics | join(', ') }}. They stay off until you press Accept, and you can change your mind any time
+with &ldquo;Cookie settings&rdquo; in the footer.</p>
+{% else %}
+<p>We use none. If that changes we will ask first, and nothing optional will load before you agree.</p>
+{% endif %}
+<p><button type="button" data-consent-open>Cookie settings</button></p>
+{% endblock %}

@@ -5,7 +5,7 @@
   "description": "Deployment platform for avkaiexplorer.com: security-gated pipeline, local stg, tunnelled prod.",
   "kind": "service",
   "stage": "completed",
-  "progress": "Phases 0-5 accepted (Phase 5: Keycloak live on stg and prod, hello login released; CI-stack Keycloak deferred). Next: Phase 6 Legal",
+  "progress": "Phases 0-5 accepted. Phase 6 Legal built: policy templates, avk legal render, contact form, axe gate; hello release and your sign-off pending",
   "stack": ["Python", "Docker Compose", "Terraform", "Cloudflare", "GitHub Actions"],
   "requires": ["python", "docker", "git"],
   "setup": [

@@ -228,3 +228,13 @@ database on start). 5. `avk auth apply --env prod` must say "no changes" or list
 Stop Keycloak (`docker stop avk-prod-keycloak-1`), then create a temporary admin with a one-off container that has the same
 image, environment and database, running `bootstrap-admin user` (see the Keycloak "bootstrap-admin-recovery" guide), start
 Keycloak again and put the new login in `keycloak-admin.env`.
+
+## Legal pages (draft, not legal advice)
+- **Add or change the pages for an app:** edit the `legal:` block in the app's `avk.yaml`, then `python -m avk legal render <app>` and commit the generated files in the app repo. `--check` fails if they are stale.
+- **See what is missing:** `render` lists every `[TO COMPLETE]` input (for `hello`: `postal_address`).
+- **Remove the DRAFT banner:** only after an attorney/CPA has reviewed the pages, set `legal.reviewed: true` and render again. Do not set it earlier.
+- **Contact form mail:** `python -m avk legal smtp <app> --env stg|prod` writes the SMTP settings into the app's secrets (then redeploy: `python -m avk deploy <app> --force`). Stg goes to Mailpit; prod uses Resend.
+- **A page moved:** add `old,new` to the app's `redirects.csv`.
+- **Retire an API version:** call `SunsetHeaders.apply(...)` in the old version's handlers, announce the date, remove it after.
+- **Owner checklist:** `docs/compliance-checklist.md`.
+

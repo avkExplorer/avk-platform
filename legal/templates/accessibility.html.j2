@@ -1,0 +1,16 @@
+{# Accessibility statement draft. Not legal advice; needs review. #}
+{% extends "_layout.html.j2" %}
+{% block body %}
+<p>Effective: {{ f('effective_date') }}</p>
+<p>We want {{ f('app_title') }} to be usable by everyone. We aim to meet the Web Content Accessibility Guidelines (WCAG) 2.1 level AA.</p>
+<h2>What we do</h2>
+<ul>
+<li>Every release is scanned automatically with axe-core; serious and critical WCAG 2.1 A/AA problems stop the release.</li>
+<li>Pages work with a keyboard and a screen reader, and respect your system colour and text-size settings.</li>
+</ul>
+<h2>Known limits</h2>
+<p>Automated scans find only some problems, and this statement is a draft. If something is hard for you to use, tell us.</p>
+<h2>Tell us</h2>
+<p>Email <a href="mailto:{{ f('support_email') }}">{{ f('support_email') }}</a> or use the <a href="{{ base_path }}/contact.html">contact page</a>.
+We try to reply within {{ f('response_time') }}.</p>
+{% endblock %}

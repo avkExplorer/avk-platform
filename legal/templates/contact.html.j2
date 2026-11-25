@@ -1,0 +1,15 @@
+{# Contact page draft. Not legal advice. The form posts to the app's /contact endpoint. #}
+{% extends "_layout.html.j2" %}
+{% block body %}
+<p>Write to us and we will reply within {{ f('response_time') }}. You get a ticket number straight away.</p>
+<form method="post" action="/contact" class="contact-form">
+<p><label for="c-name">Your name</label><br><input id="c-name" name="name" type="text" required maxlength="100" autocomplete="name"></p>
+<p><label for="c-email">Your email</label><br><input id="c-email" name="email" type="email" required maxlength="200" autocomplete="email"></p>
+<p><label for="c-message">Message</label><br><textarea id="c-message" name="message" required minlength="10" maxlength="4000" rows="6"></textarea></p>
+<p class="hp" aria-hidden="true"><label for="c-website">Leave this empty</label><input id="c-website" name="website" type="text" tabindex="-1" autocomplete="off"></p>
+{% if turnstile_site_key %}<div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-consent-required="false"></div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
+<p><button type="submit">Send</button></p>
+</form>
+<p>Prefer email? <a href="mailto:{{ f('support_email') }}">{{ f('support_email') }}</a>. Security issue? <a href="mailto:{{ f('security_email') }}">{{ f('security_email') }}</a>.</p>
+{% endblock %}
