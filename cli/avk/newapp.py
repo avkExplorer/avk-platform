@@ -397,6 +397,8 @@ def _git(opts: Options, dest: Path, owner: str, report: Report, shell: Shell, ha
             branch = ADOPT_BRANCH
     if status:
         _must(shell.run(["git", "add", "-A"], cwd=dest), "git add")
+        if (dest / "mvnw").exists():                    # Windows does not store the executable bit; the pipeline runs ./mvnw
+            _must(shell.run(["git", "update-index", "--chmod=+x", "mvnw"], cwd=dest), "git chmod mvnw")
         message = f"Onboard {opts.name} to the AVK platform\n\n{ATTRIBUTION}"
         _must(shell.run(["git", "commit", "-m", message], cwd=dest), "git commit")
         report.add("done", "git", f"committed on {branch}")

@@ -137,6 +137,7 @@ def test_a_new_api_app_goes_through_every_step_in_order(ctx):
               "db create pingpong --env prod", "auth client pingpong --env prod", "stg up pingpong --build")]
     assert order == sorted(order)
     assert not [c for c in calls if "legal render" in c or "legal smtp" in c]       # an API has no policy pages or contact form
+    assert "git update-index --chmod=+x mvnw" in calls                              # the pipeline runs ./mvnw on Linux
     assert any(s == "done" and st == "stg" for s, st, _ in report.lines)
     assert "completed in" in "\n".join(ctx.said)
 
