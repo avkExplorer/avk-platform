@@ -88,12 +88,15 @@ class GitHub:
 
 
 def pending(deployments: list[dict], statuses_of: Callable[[int], list[dict]], handled: list[int]) -> dict | None:
-    """The newest Deployment with no final status that this PC has not already handled."""
-    for d in sorted(deployments, key=lambda x: x["id"], reverse=True):
-        if d["id"] in handled:
-            continue
-        latest = statuses_of(d["id"])
-        if latest and latest[0].get("state") in FINAL_STATES:
-            continue
-        return d
-    return None
+    """The newest Deployment, if it still needs handling. Only the NEWEST counts: an older Deployment that never got a
+    final status (it was approved but superseded) must never be deployed later, or a stale release would replace a newer
+    one. Returns None when the newest is already handled or has a final status."""
+    if not deployments:
+        return None
+    newest = max(deployments, key=lambda x: x["id"])
+    if newest["id"] in handled:
+        return None
+    latest = statuses_of(newest["id"])
+    if latest and latest[0].get("state") in FINAL_STATES:
+        return None
+    return newest

@@ -418,11 +418,19 @@ def test_lock_prevents_overlap_and_recovers_from_stale(tmp_path):
     assert not (tmp_path / "l.lock").exists()
 
 
-def test_pending_picks_newest_without_a_final_status_and_skips_handled():
-    deployments = [{"id": 1}, {"id": 2}, {"id": 3}]
-    statuses = {1: [{"state": "success"}], 2: [], 3: [{"state": "failure"}]}
-    assert github.pending(deployments, lambda i: statuses[i], [])["id"] == 2
-    assert github.pending(deployments, lambda i: statuses[i], [2]) is None
+def test_pending_considers_only_the_newest_deployment():
+    statuses = {1: [], 2: [{"state": "success"}], 3: []}
+    assert github.pending([{"id": 1}, {"id": 2}, {"id": 3}], lambda i: statuses[i], [])["id"] == 3
+    assert github.pending([{"id": 1}, {"id": 2}, {"id": 3}], lambda i: statuses[i], [3]) is None   # handled
+    done = {1: [], 2: [], 3: [{"state": "failure"}]}
+    assert github.pending([{"id": 1}, {"id": 2}, {"id": 3}], lambda i: done[i], []) is None       # final
+
+
+def test_an_old_unfinished_deployment_is_never_deployed_after_a_newer_one():
+    """The hazard: an approved but superseded Deployment with no status must not roll production back."""
+    statuses = {1: [], 2: [{"state": "success"}]}
+    assert github.pending([{"id": 1}, {"id": 2}], lambda i: statuses[i], []) is None
+    assert github.pending([], lambda i: [], []) is None
 
 
 def test_github_client_sends_token_only_in_the_header():
