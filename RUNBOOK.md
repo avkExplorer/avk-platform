@@ -1,4 +1,4 @@
-# Runbook
+﻿# Runbook
 
 All commands are PowerShell from the repo root. Set `$avk = "$env:AVK_HOME\venv\Scripts\python.exe"` first.
 
@@ -178,3 +178,49 @@ SPF include or DKIM first, or its mail will be quarantined.
 Resend automatically stops sending to addresses that bounced or complained. View them in the Resend dashboard
 (Suppressions). Never re-add one by hand. A webhook receiver for bounces is a follow-up for the first app that
 sends mail.
+
+## Login (Keycloak)
+
+URLs: stg `http://127.0.0.1:4810` (Mailpit on :4811 shows the emails), prod `https://auth.avkaiexplorer.com` for users and
+`http://127.0.0.1:4910` for the admin console (this PC only). Admin passwords are in
+`%AVK_HOME%\secrets\<env>\keycloak-admin.env` (`AVK_ADMIN_PASSWORD`); keep a copy in the password manager.
+
+```powershell
+& $avk -m avk auth build              # build the Keycloak image (first time, or after a theme or version change)
+& $avk -m avk auth init --env prod    # secrets + database (also done by `avk prod up` / `avk stg up`)
+& $avk -m avk auth apply --env prod   # apply realm-avk.json; a second run says "no changes"
+& $avk -m avk auth client hello --env prod
+& $avk -m avk auth test --env stg     # browser tests (stg only: they create and delete users)
+```
+
+### First login as the console admin
+1. Open `http://127.0.0.1:4910/admin/master/console/`, user `avk-admin`, the password from `keycloak-admin.env`.
+2. Keycloak makes you enrol an authenticator app: scan the QR code, type the code. Save the recovery steps in the password manager.
+
+### Add an admin (a user who may open an app's `/admin`)
+Console > realm `avk` > Users > the person > Role mapping > Assign role > `admin`. At their next login they are forced to enrol OTP.
+
+### Reset a user's MFA
+Console > realm `avk` > Users > the person > Credentials > delete the "otp" credential. A normal user can then log in with a
+password only; an admin must enrol again at the next login.
+
+### Rotate a client secret
+`avk auth client <app> --env <env> --rotate` writes a new secret to `secrets\<env>\<app>.env`; then
+`avk deploy <app> --force` so the app picks it up (see "Rotate a secret").
+
+### Change the login branding
+Colour: the variables at the top of `runtime/keycloak/themes/avk/login/resources/css/avk.css` and `.../account/resources/css/avk.css`.
+Logo: replace `.../account/resources/img/logo.svg`; for the login page set `--avk-logo-url` and `--avk-logo-display: block`.
+Then `avk auth build`, restart Keycloak (`docker compose -p avk-prod -f runtime/compose.prod.yaml up -d --force-recreate keycloak`
+or `avk stg up`), and run `avk auth apply`.
+
+### Upgrade Keycloak
+1. Read the release notes (security fixes land in patch releases). 2. Change the digest in `runtime/keycloak/Dockerfile` and
+`KEYCLOAK_VERSION` in `cli/avk/auth.py` and the `image:` tags in both compose files. 3. `avk auth build`, then
+`avk stg up` and `avk auth test --env stg`. 4. Run a backup (`avk backup run`), then `avk prod up` (Keycloak migrates its own
+database on start). 5. `avk auth apply --env prod` must say "no changes" or list sensible ones.
+
+### Keycloak locked out (the CLI cannot log in)
+Stop Keycloak (`docker stop avk-prod-keycloak-1`), then create a temporary admin with a one-off container that has the same
+image, environment and database, running `bootstrap-admin user` (see the Keycloak "bootstrap-admin-recovery" guide), start
+Keycloak again and put the new login in `keycloak-admin.env`.

@@ -1,4 +1,4 @@
-# Security
+﻿# Security
 
 ## Reporting a vulnerability
 
@@ -66,13 +66,13 @@ https://github.com/avkExplorer/hello/actions/runs/45513801212 (image, signature,
 
 | Proof | What happened | Evidence |
 |---|---|---|
-| Manual rollback | After release `33a7d7…` went live on blue, `avk rollback hello` put the previous digest `e74a8b…` back on green in about 18 s. The public ping answered `pong` before and after. | `deployer.log` 2026-11-25 03:39 to 03:40 (`rollback: true`, `deploy_success`) |
-| Automatic rollback | Release `c16183…` (ping creates a temp table, forbidden for `hello_rw`) passed CI and was owner-approved. Trust checks passed, migration ran, then the pre-switch smoke test got `GET /api/v1/ping returned 500`. Traffic never moved. GitHub Deployment 8047786637 shows `failure`. | `deployer.log` 2026-11-25 03:49 to 03:50; run https://github.com/avkExplorer/hello/actions/runs/45541635726 |
+| Manual rollback | After release `33a7d7â€¦` went live on blue, `avk rollback hello` put the previous digest `e74a8bâ€¦` back on green in about 18 s. The public ping answered `pong` before and after. | `deployer.log` 2026-11-25 03:39 to 03:40 (`rollback: true`, `deploy_success`) |
+| Automatic rollback | Release `c16183â€¦` (ping creates a temp table, forbidden for `hello_rw`) passed CI and was owner-approved. Trust checks passed, migration ran, then the pre-switch smoke test got `GET /api/v1/ping returned 500`. Traffic never moved. GitHub Deployment 8047786637 shows `failure`. | `deployer.log` 2026-11-25 03:49 to 03:50; run https://github.com/avkExplorer/hello/actions/runs/45541635726 |
 | Zero downtime | A poller hit the public ping twice a second from before the merge until after the failed deploy: 857 requests, 857 returned 200, none failed. | poll log, 21:40:41 to 21:50:12 (UTC-6) |
 
 | Reboot | Windows restarted twice. Second boot (22:14): logon task started Docker Desktop, engine ready in 11 s, `avk prod up` exit 0, the deploy agent ran its next tick, and the public ping answered `pong`, with no manual step. First boot: production came back by itself, but the Docker engine API hung for 10+ minutes and froze `avk prod up` and the agent task. Docker Desktop was restarted by hand. Fix: every Docker call in `prod-at-logon.ps1` and `run-avk-task.ps1` now has a time limit, and the logon script restarts Docker Desktop once if `prod up` hangs. | `C:\avk\logs\prod-at-logon.log`, `task-deploy-agent.log` |
 
-The broken change was merged to prove this path. Production stayed on `e74a8b…`. The next real release replaces the
+The broken change was merged to prove this path. Production stayed on `e74a8bâ€¦`. The next real release replaces the
 broken code on `main`.
 
 ## How a release reaches production (trust chain)
@@ -92,8 +92,8 @@ The identities are stored in the `signing:` block of `platform.yaml` and nowhere
 file from identity A, so the build workflow cannot produce an approval. The certificate identity carries the ref the
 caller used (`@refs/heads/main` today; pinned to a commit SHA in Phase 8).
 
-Verified from the owner's PC on 2026-11-25 against digest `sha256:e74a8b1f…09312` (released and approved) and
-`sha256:5488770d…30409` (merged but never approved):
+Verified from the owner's PC on 2026-11-25 against digest `sha256:e74a8b1fâ€¦09312` (released and approved) and
+`sha256:5488770dâ€¦30409` (merged but never approved):
 
 | Check | Result |
 |---|---|
@@ -108,6 +108,43 @@ Verified from the owner's PC on 2026-11-25 against digest `sha256:e74a8b1f…093
 Residual trust: the owner's GitHub account (it can approve and change workflows) and Cloudflare account. Both must have
 two-factor authentication; GitHub is enabled, Cloudflare uses email for now and is to move to an authenticator app.
 
+## Authentication (Phase 5: shared Keycloak)
+
+One Keycloak (26.8.2, image built locally from a digest-pinned base) serves every app through the realm `avk`. Apps never
+store passwords. Stg: `http://127.0.0.1:4810`. Prod: `https://auth.avkaiexplorer.com`.
+
+**Exposure.** Publicly, Traefik answers 404 for `/admin`, the `master` realm, `/metrics` and `/health`. The admin console is
+published only on `127.0.0.1:4910` and has its own hostname setting. Keycloak's management port (health, metrics) is never
+published. Responses carry HSTS, no-sniff, no-framing and a strict referrer policy.
+
+**Realm settings (file: `runtime/keycloak/realm-avk.json`, applied by `avk auth apply`, safe to run again).**
+- Sign-up with email as the username, email verification required, forgot-password on.
+- Passwords: at least 12 characters, not the username, not the email, stored with **Argon2** (checked by a test that reads
+  the stored credential).
+- Brute-force protection: five failures lock the account temporarily (growing wait, never permanent). The error text is the
+  same for an unknown account, a wrong password and a locked account (tested).
+- Access tokens last 5 minutes; refresh tokens rotate and cannot be reused; sessions idle out after 30 minutes and end after 10 hours.
+- OTP: optional for everyone; **required for the `admin` role** (an admin without OTP must enrol at the next login; an admin is
+  asked for a code every login). Everyone else is prompted only if they enrolled.
+- Users can delete their own account in the account console.
+- Login and admin events are kept for 30 days and also written to the container log as JSON.
+
+**Clients.** `avk auth client <app> --env <env>`: confidential client, Authorization Code with PKCE (S256, enforced by Keycloak:
+a request without a challenge is refused), exact redirect addresses, no implicit flow, no password grant, no service account.
+
+**Admin accounts.** The temporary bootstrap admin is deleted on first use. Two permanent master-realm accounts replace it:
+`avk-admin` (the owner; must enrol OTP at first login) and `avk-cli` (non-human, used only by the `avk` command; it has no
+OTP because a script cannot type one, and the admin API is not reachable from the internet).
+
+**Browser tests.** `avk auth test --env stg` runs nine scenarios against the real login: sign-up, verification email,
+login, profile, logout, theme and footer, weak passwords, Argon2, lockout and identical errors, password reset, forced admin
+OTP, no OTP prompt for a normal user, account deletion.
+
+**Known gaps.**
+- No breached-password check (Keycloak has none built in; the length and Argon2 rules are the compensation).
+- The master-realm CLI user has no second factor; it is protected by the loopback-only admin port and a 64-character secret.
+- The Terms and Privacy links in the login footer point at pages that arrive in Phase 6.
+- Social login is off. Turnstile (bot check) is not enabled; the edge rate limit covers the login, registration and reset paths.
 ## Infrastructure posture
 
 - No inbound ports; the tunnel is outbound only. Cloudflare terminates TLS (1.2 minimum, HTTPS enforced).
