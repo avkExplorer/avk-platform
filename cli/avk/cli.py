@@ -9,6 +9,7 @@ import ssl
 import sys
 
 from avk import __version__, config, dbadmin, doctor, landing, mail, prod, secretgen, tf
+from avk.deployer import agent
 
 
 def cmd_validate(_args) -> int:
@@ -87,6 +88,15 @@ def build_parser() -> argparse.ArgumentParser:
     dcreate.add_argument("app")
     dcreate.add_argument("--env", choices=["stg", "prod"], required=True)
     dcreate.set_defaults(func=dbadmin.main)
+
+    sub.add_parser("deploy-agent", help="poll GitHub once and deploy any approved release").set_defaults(func=agent.cmd_agent)
+    depp = sub.add_parser("deploy", help="deploy an app now (same trust checks and smoke tests as the agent)")
+    depp.add_argument("app")
+    depp.add_argument("--digest", help="deploy this exact digest (still must be signed and approved)")
+    depp.set_defaults(func=agent.cmd_deploy)
+    rbp = sub.add_parser("rollback", help="return an app to its previous digest (all trust checks run again)")
+    rbp.add_argument("app")
+    rbp.set_defaults(func=agent.cmd_rollback)
 
     landp = sub.add_parser("landing", help="apex/status placeholder pages on Cloudflare Pages").add_subparsers(dest="action", required=True)
     landp.add_parser("deploy").set_defaults(func=landing.main)
