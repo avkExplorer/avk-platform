@@ -103,6 +103,33 @@ jobs:
             "docker:$IMAGE:$SHA" -o cyclonedx-json > sbom.cdx.json
           cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$REF"
 
+      - name: Run summary for the approver
+        env:
+          IMAGE: ${{ steps.push.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          SHA: ${{ github.sha }}
+          APP: ${{ inputs.app-name }}
+        run: |
+          tests=0; failures=0
+          for f in target/surefire-reports/TEST-*.xml; do
+            [ -e "$f" ] || continue
+            t=$(grep -o 'tests="[0-9]*"' "$f" | head -1 | tr -dc 0-9); f2=$(grep -o 'failures="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
+            tests=$((tests + ${t:-0})); failures=$((failures + ${f2:-0}))
+          done
+          components=$(jq '.components | length' sbom.cdx.json)
+          {
+            echo "### Release candidate: $APP"
+            echo
+            echo "| | |"; echo "|---|---|"
+            echo "| Image | \`$IMAGE\` |"
+            echo "| Digest | \`$DIGEST\` |"
+            echo "| Commit | \`$SHA\` |"
+            echo "| Unit and API tests | $tests run, $failures failed |"
+            echo "| SBOM components | $components |"
+            echo
+            echo "Approve only if this is the commit you expect. Approving signs this exact digest for production."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload SBOM
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
