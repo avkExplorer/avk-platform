@@ -1,0 +1,33 @@
+{# Terms of Service draft. Not legal advice; needs attorney review. #}
+{% extends "_layout.html.j2" %}
+{% block body %}
+<p>Effective: {{ f('effective_date') }}</p>
+<h2>1. Agreement</h2>
+<p>These terms govern your use of {{ f('app_title') }} ({{ f('site_url') }}), provided by {{ f('legal_name') }}
+({{ f('postal_address') }}). By using the service you agree to them. If you do not agree, please do not use it.</p>
+<h2>2. Your account</h2>
+<p>{% if accounts %}You sign in through our shared login service. Keep your credentials private and tell us at
+{{ f('support_email') }} if you think someone else has used your account. You can delete your account yourself at any time
+from your account page.{% else %}{{ f('app_title') }} does not require an account.{% endif %}</p>
+<h2>3. Acceptable use</h2>
+<p>Do not misuse the service: no attempts to break, overload or probe it, no unlawful content, and no use that harms other people.
+We may suspend access that breaks these rules.</p>
+{% if sells_goods or subscriptions %}
+<h2>4. Purchases</h2>
+<p>Prices and what you receive are shown before you pay. Payments are handled by {{ f('payment_processor') }}; we never see your full card
+number. See our <a href="{{ base_path }}/refunds.html">refund, return and cancellation policy</a>.</p>
+{% endif %}
+<h2>{% if sells_goods or subscriptions %}5{% else %}4{% endif %}. Service changes and availability</h2>
+<p>We aim to keep the service running but do not promise it will be uninterrupted or error-free. We may change or end features, and will
+give notice where reasonably possible.</p>
+<h2>{% if sells_goods or subscriptions %}6{% else %}5{% endif %}. Disclaimers and limits</h2>
+<p>The service is provided &ldquo;as is&rdquo;, without warranties to the extent the law allows. To the extent the law allows, our total
+liability to you is limited to the amount you paid us in the 12 months before the claim. Nothing here limits rights you have under law
+that cannot be limited.</p>
+<h2>{% if sells_goods or subscriptions %}7{% else %}6{% endif %}. Governing law</h2>
+<p>These terms are governed by {{ f('governing_law') }}.</p>
+<h2>{% if sells_goods or subscriptions %}8{% else %}7{% endif %}. Changes to these terms</h2>
+<p>We may update these terms. The effective date above shows the latest version; continued use means you accept the update.</p>
+<h2>Contact</h2>
+<p>Questions: <a href="mailto:{{ f('support_email') }}">{{ f('support_email') }}</a> or the <a href="{{ base_path }}/contact.html">contact page</a>.</p>
+{% endblock %}

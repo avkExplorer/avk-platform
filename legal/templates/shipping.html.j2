@@ -1,0 +1,11 @@
+{# Shipping policy draft. Not legal advice; needs attorney review. #}
+{% extends "_layout.html.j2" %}
+{% block body %}
+<p>Effective: {{ f('effective_date') }}</p>
+<h2>Where and how we ship</h2>
+<p>{{ f('shipping_terms') }}</p>
+<h2>Delivery times and costs</h2>
+<p>{{ f('shipping_times') }}</p>
+<h2>Lost or damaged orders</h2>
+<p>Write to <a href="mailto:{{ f('support_email') }}">{{ f('support_email') }}</a> with your order number and we will help.</p>
+{% endblock %}

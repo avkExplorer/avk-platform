@@ -145,6 +145,26 @@ OTP, no OTP prompt for a normal user, account deletion.
 - The master-realm CLI user has no second factor; it is protected by the loopback-only admin port and a 64-character secret.
 - The Terms and Privacy links in the login footer point at pages that arrive in Phase 6.
 - Social login is off. Turnstile (bot check) is not enabled; the edge rate limit covers the login, registration and reset paths.
+- The CI stack has no Keycloak, so the pipeline does not run the real browser login tests; those run by hand against stg
+  (17 tests) and `hello`'s unit tests cover the role rules. Deferred by the owner on 2026-11-25; build it at the start of
+  Phase 8 (`avk new-app` needs a standard test setup anyway), or sooner if a second app or developer appears.
+- Norton's Mail Shield re-signs the mail TLS to Resend; prod Keycloak trusts the exported Windows roots as a workaround.
+- An account deleted directly in the Keycloak console is not announced to the apps.
+
+## Legal pack and accessibility gate (Phase 6)
+
+Policy pages, the cookie notice, the contact page and `security.txt` are generated from shared templates (`legal/`) and are a **draft, not legal
+advice**: each page shows "DRAFT – needs review by a qualified attorney/CPA" until the owner sets `legal.reviewed: true`. Templates never invent
+facts; missing inputs render as `[TO COMPLETE]` and `avk legal render --check` fails for a live app while any remain.
+
+- **Cookies:** a plain visit sets no cookie at all; the notice choice lives in local storage (`avk_consent`). Optional scripts (`type="text/plain" data-consent`) stay inert until Accept. Proven in the stg browser tests (cookies `[]` before and after).
+- **Contact form:** server-side validation, hidden-field bot trap, 5 messages per minute per address (6th answers 429), optional Cloudflare Turnstile, nothing typed by the visitor is logged. The form is a static page and cannot carry a CSRF token, so `/contact` ignores CSRF; abuse is bounded by the rate limit. Known limit: anyone can make the form send the (message-free) acknowledgement to an address they type; turn Turnstile on before real traffic.
+- **Redirects:** `redirects.csv` accepts only same-site paths and refuses loops; bad lines stop start-up (no open redirect).
+- **Accessibility gate:** axe-core (WCAG 2.1 A/AA) runs in the release run on the home page, contact page and every policy page, and in the platform's stg tests on the login and registration pages. Any serious or critical violation fails the run.
+  - Proof (2026-11-25, local run of the same Playwright test used in the release): with an image without alt text and an unlabelled input planted on the contact page, `accessibility: /legal/contact.html` failed with `image-alt (critical): 1 element(s)` and `label (critical): 1 element(s)` while the other five pages passed; the clean pages all pass.
+  - Open: the failing run inside the GitHub pipeline itself is recorded below once a planted-defect change has gone through the release workflow.
+- **Known gaps:** the prod contact form cannot send mail yet (Norton re-signs the mail TLS and the app's Java does not trust Norton's root; the form answers with a friendly error and the support address). Fix: exclude `smtp.resend.com` in Norton's Mail Shield, or give the app containers a truststore.
+
 ## Infrastructure posture
 
 - No inbound ports; the tunnel is outbound only. Cloudflare terminates TLS (1.2 minimum, HTTPS enforced).

@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, auth, backup, config, dbadmin, doctor, landing, mail, prod, secretgen, stg, tf
+from avk import __version__, auth, backup, config, dbadmin, doctor, landing, legal, mail, prod, secretgen, stg, tf
 from avk.deployer import agent
 
 
@@ -104,6 +104,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     landp = sub.add_parser("landing", help="apex/status placeholder pages on Cloudflare Pages").add_subparsers(dest="action", required=True)
     landp.add_parser("deploy").set_defaults(func=landing.main)
+
+    legalp = sub.add_parser("legal", help="policy pages from shared templates (a draft, not legal advice)").add_subparsers(dest="action", required=True)
+    lrender = legalp.add_parser("render", help="write the pages into the app repo (idempotent)")
+    lrender.add_argument("app")
+    lrender.add_argument("--check", action="store_true", help="exit 1 if the pages are stale, or [TO COMPLETE] remains for a live app")
+    lrender.set_defaults(func=legal.main)
+    lsmtp = legalp.add_parser("smtp", help="add the contact-form mail settings to an app's runtime secrets (never printed)")
+    lsmtp.add_argument("app")
+    lsmtp.add_argument("--env", choices=["stg", "prod"], required=True)
+    lsmtp.set_defaults(func=legal.smtp)
 
     mailp = sub.add_parser("mail", help="business email DNS checks").add_subparsers(dest="action", required=True)
     mailp.add_parser("check").set_defaults(func=mail.main)

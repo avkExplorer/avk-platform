@@ -1,0 +1,10 @@
+{# Footer links to every policy page that applies. Not legal advice; links only. #}
+<footer class="site-footer">
+<nav aria-label="Legal and support">
+<ul>
+{% for page in pages %}<li><a href="{{ page.href }}">{{ page.title }}</a></li>
+{% endfor %}<li><a href="{{ base_path }}/cookies.html" data-consent-open>Cookie settings</a></li>
+</ul>
+</nav>
+<p>&copy; {{ f('legal_name') }}</p>
+</footer>
