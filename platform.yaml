@@ -35,3 +35,9 @@ apps:
     repo: avkExplorer/clickers
     hosts: [clickers.avkaiexplorer.com]
     status: stg
+  - name: pingpong
+    type: api
+    stg_port: 4822
+    repo: avkExplorer/pingpong
+    hosts: [pingpong.avkaiexplorer.com]
+    status: stg
