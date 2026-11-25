@@ -81,6 +81,17 @@ class Deployer:
                 return f"GET {c['path']} did not contain {c['contains']!r}"
         return None
 
+    def host_truststore(self, contract: dict) -> Path | None:
+        """The PC's Java truststore, for an app whose avk.yaml says `host_truststore: true` (Norton re-signs outgoing mail TLS).
+        Missing file: carry on without it (mail may fail, the app still serves) and say so in the log."""
+        if contract.get("host_truststore") is not True:
+            return None
+        path = config.avk_home() / "certs" / "host-truststore.p12"
+        if not path.is_file():
+            self.log("truststore_missing", path=str(path), hint="run `avk certs refresh`")
+            return None
+        return path
+
     def wait_ready(self, base: str, ready_path: str) -> bool:
         deadline = self.clock() + self.ready_timeout
         while True:
@@ -145,7 +156,8 @@ class Deployer:
         idle = other_color(live)
         idle_name = container_name(app, idle)
         labels = {"avk.app": app, "avk.color": idle, "avk.digest": t.digest}
-        started, msg = self.docker.start_app(idle_name, ref, env_file, labels)
+        store = self.host_truststore(contract)
+        started, msg = self.docker.start_app(idle_name, ref, env_file, labels, store) if store else self.docker.start_app(idle_name, ref, env_file, labels)
         if not started:
             return self.fail(t, "start", msg or "could not start the new colour")
         backend = f"http://{idle_name}:{port}"

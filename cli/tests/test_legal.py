@@ -145,3 +145,67 @@ def test_support_ack_is_rendered_from_the_phase_2_template_with_placeholders():
 def test_smtp_env_for_stg_points_at_mailpit_and_never_needs_a_key():
     env = legal.smtp_env("stg")
     assert env["SMTP_HOST"] == "mailpit" and env["SMTP_PORT"] == "1025" and env["SMTP_PASSWORD"] == ""
+
+
+# --- host truststore (Norton re-signs outgoing mail TLS; Java in a container must trust the PC's roots) -------------------
+from avk import truststore                                    # noqa: E402
+from avk.deployer import dockerops                            # noqa: E402
+
+PEM = "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n"
+
+
+def test_truststore_imports_every_certificate_and_counts_failures(tmp_path):
+    pem = tmp_path / "roots.pem"
+    pem.write_text(PEM * 3, encoding="ascii")
+    calls = []
+
+    def fake(argv):
+        calls.append(argv)
+        if len(calls) == 2:
+            return 1                                          # one certificate keytool refuses
+        open(argv[argv.index("-keystore") + 1], "wb").write(b"p12")
+        return 0
+
+    out = tmp_path / "certs" / "host-truststore.p12"
+    assert truststore.build(pem, out, keytool="keytool", run=fake) == (2, 1)
+    assert out.read_bytes() == b"p12" and not out.with_suffix(".tmp").exists()
+    assert all("changeit" in c for c in calls)
+
+
+def test_truststore_fails_clearly_when_nothing_imports_or_pem_is_empty(tmp_path):
+    pem = tmp_path / "roots.pem"
+    pem.write_text(PEM, encoding="ascii")
+    with pytest.raises(SystemExit):
+        truststore.build(pem, tmp_path / "x.p12", keytool="keytool", run=lambda argv: 1)
+    pem.write_text("nothing", encoding="ascii")
+    with pytest.raises(SystemExit):
+        truststore.build(pem, tmp_path / "x.p12", keytool="keytool", run=lambda argv: 0)
+
+
+def test_start_app_mounts_the_truststore_read_only_only_when_asked(tmp_path):
+    seen = []
+    docker = dockerops.Docker(run=lambda argv, stdin=None: (seen.append(argv), (0, "", ""))[1])
+    docker.start_app("hello-blue", "img@sha256:x", tmp_path / "e.env", {"avk.app": "hello"})
+    plain = seen[-1]
+    assert "-v" not in plain and not any(a.startswith("JAVA_TOOL_OPTIONS") for a in plain)
+    store = tmp_path / "host-truststore.p12"
+    docker.start_app("hello-blue", "img@sha256:x", tmp_path / "e.env", {"avk.app": "hello"}, store)
+    argv = seen[-1]
+    assert f"{store.as_posix()}:/certs/host-truststore.p12:ro" in argv
+    assert any(a.startswith("JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore=/certs/host-truststore.p12") for a in argv)
+    assert "--read-only" in argv and "--cap-drop" in argv     # hardening unchanged
+
+
+def test_deployer_uses_the_truststore_only_for_apps_that_ask_and_only_if_the_file_exists(tmp_path, monkeypatch):
+    from avk import config
+    from avk.deployer import bluegreen
+    monkeypatch.setenv("AVK_HOME", str(tmp_path))
+    deployer = bluegreen.Deployer.__new__(bluegreen.Deployer)
+    logged = []
+    deployer.log = lambda event, **kw: logged.append(event)
+    assert deployer.host_truststore({"port": 1}) is None
+    assert deployer.host_truststore({"host_truststore": True}) is None and logged == ["truststore_missing"]
+    (tmp_path / "certs").mkdir()
+    (tmp_path / "certs" / "host-truststore.p12").write_bytes(b"x")
+    assert deployer.host_truststore({"host_truststore": True}) == config.avk_home() / "certs" / "host-truststore.p12"
+    assert deployer.host_truststore({"host_truststore": "yes"}) is None            # only a real boolean opts in
