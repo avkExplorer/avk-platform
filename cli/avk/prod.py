@@ -39,6 +39,9 @@ def prepare() -> str | None:
     token = config.avk_home() / "secrets" / "platform" / "tunnel.token"
     if not token.is_file():
         return f"{token} missing: run `avk tf apply` first"
+    from avk import secretgen
+
+    secretgen.ensure_platform(("prod",))  # the database password file the compose file mounts
     hosts = sorted(h for a in config.load().apps if a.get("status", "stg") != "retired" for h in a.get("hosts") or [])
     routes = config.avk_home() / "state" / "traefik"
     routes.mkdir(parents=True, exist_ok=True)

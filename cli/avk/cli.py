@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, doctor, landing, mail, prod, tf
+from avk import __version__, config, dbadmin, doctor, landing, mail, prod, secretgen, tf
 
 
 def cmd_validate(_args) -> int:
@@ -73,6 +73,20 @@ def build_parser() -> argparse.ArgumentParser:
     prodp = sub.add_parser("prod", help="prod stack (tunnel + Traefik)").add_subparsers(dest="action", required=True)
     for action in ("up", "down", "status"):
         prodp.add_parser(action).set_defaults(func=prod.main)
+
+    secp = sub.add_parser("secrets", help="generate credentials outside git (values are never printed)").add_subparsers(dest="action", required=True)
+    secp.add_parser("platform", help="platform's own secrets (database admin, backup password)").set_defaults(func=secretgen.main)
+    sinit = secp.add_parser("init", help="an app's secret files for one environment")
+    sinit.add_argument("app")
+    sinit.add_argument("--env", choices=["stg", "prod"], required=True)
+    sinit.add_argument("--rotate", action="append", choices=["runtime", "migrator", "ro"], help="replace that password")
+    sinit.set_defaults(func=secretgen.main)
+
+    dbp = sub.add_parser("db", help="app databases and roles").add_subparsers(dest="action", required=True)
+    dcreate = dbp.add_parser("create", help="create the database and its three least-privilege roles")
+    dcreate.add_argument("app")
+    dcreate.add_argument("--env", choices=["stg", "prod"], required=True)
+    dcreate.set_defaults(func=dbadmin.main)
 
     landp = sub.add_parser("landing", help="apex/status placeholder pages on Cloudflare Pages").add_subparsers(dest="action", required=True)
     landp.add_parser("deploy").set_defaults(func=landing.main)

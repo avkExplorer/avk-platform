@@ -63,6 +63,32 @@ services:
     mem_limit: 256m
     cpus: 0.5
 
+  # The production database. No host port: only containers on the private avk-prod network can reach it
+  # (the deployer's migration container and the app colours). Data lives in a named volume on the internal disk.
+  pg-prod:
+    <<: *hardened
+    image: postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
+    # The image entrypoint starts as root only to fix ownership of the data volume, then drops to the postgres user.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_admin_password
+      POSTGRES_INITDB_ARGS: --data-checksums
+    secrets: [pg_admin_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    networks: [prod]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    mem_limit: 768m
+    cpus: 1.0
+
   # Phase 1 test target for hello.avkaiexplorer.com. Phase 4 replaces it with the real app colours.
   whoami:
     <<: *hardened
@@ -74,6 +100,12 @@ services:
 secrets:
   tunnel_token:
     file: ${AVK_HOME_SLASH}/secrets/platform/tunnel.token
+  pg_admin_password:
+    file: ${AVK_HOME_SLASH}/secrets/prod/postgres-admin.password
+
+volumes:
+  pgdata:
+    name: avk-prod-pgdata
 
 networks:
   prod:
