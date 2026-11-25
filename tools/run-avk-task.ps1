@@ -16,11 +16,23 @@ function Write-Log($msg) { "$(Get-Date -Format o) $msg" | Out-File -FilePath $lo
 # Keep each log under about 1 MB.
 if ((Test-Path $log) -and ((Get-Item $log).Length -gt 1MB)) { Move-Item $log "$log.old" -Force }
 
-docker info --format '{{.ServerVersion}}' *> $null
-if ($LASTEXITCODE -ne 0) { Write-Log "docker not ready; skipped"; exit 0 }
+# Time limits: a hung Docker engine must not leave this task running forever (it blocked every later tick once).
+function Invoke-Timed([string]$File, [string[]]$Arguments, [int]$Seconds) {
+    $outFile = [IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath $File -ArgumentList $Arguments -NoNewWindow -PassThru -RedirectStandardOutput $outFile -RedirectStandardError "$outFile.err"
+    $null = $p.Handle   # caching the handle is what makes ExitCode readable after the process ends
+    $done = $p.WaitForExit($Seconds * 1000)
+    if (-not $done) { & taskkill /PID $p.Id /T /F *> $null } else { $p.WaitForExit() }   # the plain wait makes ExitCode available
+    $text = @(Get-Content $outFile, "$outFile.err" -ErrorAction SilentlyContinue)
+    Remove-Item $outFile, "$outFile.err" -Force -ErrorAction SilentlyContinue
+    @{ Code = $(if ($done) { $p.ExitCode } else { -1 }); Out = $text; TimedOut = -not $done }
+}
+
+$info = Invoke-Timed 'docker' @('info', '--format', '{{.ServerVersion}}') 30
+if ($info.Code -ne 0) { Write-Log "docker not ready$(if ($info.TimedOut) { ' (engine hung)' }); skipped"; exit 0 }
 
 $python = Join-Path $avkHome 'venv\Scripts\python.exe'
-$out = & $python -m avk ($Args -split ' ') 2>&1
-$code = $LASTEXITCODE
-Write-Log "exit=$code $(($out | Select-Object -Last 6) -join ' | ')"
-exit $code
+$run = Invoke-Timed $python (@('-m', 'avk') + ($Args -split ' ')) 900
+if ($run.TimedOut) { Write-Log "timed out after 900 s; killed"; exit 1 }
+Write-Log "exit=$($run.Code) $(($run.Out | Select-Object -Last 6) -join ' | ')"
+exit $run.Code
