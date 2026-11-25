@@ -166,19 +166,22 @@ def set_app_status(path: Path, name: str, status: str) -> bool:
 
 
 # ---------------------------------------------------------------------------------------------------- static helpers
-FOOTER_BLOCK = ("<!-- avk-legal-footer:start -->\n<!-- avk-legal-footer:end -->\n<link rel=\"stylesheet\" href=\"/legal/legal.css\">\n"
+FOOTER_BLOCK = ("<!-- avk-legal-footer:start -->\n<!-- avk-legal-footer:end -->\n<link rel=\"stylesheet\" href=\"/legal/footer.css\">\n"
                 "<script src=\"/legal/consent.js\" data-mode=\"notice\" defer></script>\n")
 
 
 def ensure_footer_markers(index: Path) -> bool:
-    """Adopted pages get the place where `avk legal render` writes the footer links, just before </body>. Returns True if it edited."""
+    """Adopted pages get the place where `avk legal render` writes the footer links, just before the LAST </body>. (Pages that build
+    their own documents in JavaScript contain </body> inside strings earlier on: only the final one closes the real page.)
+    The stylesheet is the footer-only one, so the page's own design is untouched. Returns True if it edited."""
     text = index.read_text(encoding="utf-8")
     if "avk-legal-footer:start" in text:
         return False
-    marker = re.search(r"</body\s*>", text, re.I)
-    if not marker:
+    closers = list(re.finditer(r"</body\s*>", text, re.I))
+    if not closers:
         raise NewAppError(f"{index} has no </body>: add `{FOOTER_BLOCK.splitlines()[0]}` and the end marker where the footer links go")
-    index.write_text(text[:marker.start()] + FOOTER_BLOCK + text[marker.start():], encoding="utf-8", newline="")
+    at = closers[-1].start()
+    index.write_text(text[:at] + FOOTER_BLOCK + text[at:], encoding="utf-8", newline="")
     return True
 
 
@@ -340,11 +343,16 @@ def run_new_app(opts: Options, ctx: Context | None = None) -> tuple[int, Report]
     # 9. Wall
     wall = ctx.workspace / "wall" / "wall.py"
     if wall.exists():
-        for sub in (["validate"], ["check", opts.name]):
-            res = shell.run([sys.executable, str(wall), *sub], cwd=ctx.workspace)
-            if res.code != 0:
-                raise NewAppError(f"wall {' '.join(sub)} failed:\n{res.out[-400:]}")
-        report.add("ok", "wall", "validate and check pass")
+        # `wall validate` judges every project in the workspace and exits non-zero when ANY folder lacks a manifest; only this app's
+        # own line matters here.
+        res = shell.run([sys.executable, str(wall), "validate"], cwd=ctx.workspace)
+        mine = [line for line in res.out.splitlines() if line.split()[:2] and line.split()[1] == opts.name]
+        if not any(line.split()[0] == "ok" for line in mine):
+            raise NewAppError(f"wall validate does not accept {opts.name}:\n" + ("\n".join(mine) or res.out[-400:]))
+        res = shell.run([sys.executable, str(wall), "check", opts.name], cwd=ctx.workspace)
+        if res.code != 0:
+            raise NewAppError(f"wall check {opts.name} failed:\n{res.out[-400:]}")
+        report.add("ok", "wall", f"{opts.name} validates and its checks pass")
 
     minutes = (ctx.clock() - started) / 60
     _print(report, say)

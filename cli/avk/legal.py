@@ -165,6 +165,7 @@ def render(app: str, legal: dict, site_url: str | None = None) -> Rendered:
         out.pages.append(page["slug"])
     out.files[f"{folder}/legal.css"] = (STATIC_DIR / "legal.css").read_text(encoding="utf-8")
     out.files[f"{folder}/consent.js"] = (STATIC_DIR / "consent.js").read_text(encoding="utf-8")
+    out.files[f"{folder}/footer.css"] = (STATIC_DIR / "footer.css").read_text(encoding="utf-8")        # for pages with their own design
     out.files[f"{str(values['well_known_dir']).strip('/')}/security.txt"] = env.get_template("security.txt.j2").render(**context)
     if context["contact_form"]:                         # a site with no server code (static) has no form to acknowledge
         ack = mailtpl.render("support_ack", {

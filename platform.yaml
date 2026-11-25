@@ -29,3 +29,9 @@ apps:
     repo: avkExplorer/hello
     hosts: [hello.avkaiexplorer.com]
     status: stg
+  - name: clickers
+    type: static
+    stg_port: 4821
+    repo: avkExplorer/clickers
+    hosts: [clickers.avkaiexplorer.com]
+    status: stg
