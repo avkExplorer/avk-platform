@@ -1,0 +1,14 @@
+/* AVK colours for the account console. Same accent as the login theme; change the two values below together. */
+:root {
+    --avk-accent: #0f766e;
+    --avk-accent-dark: #115e59;
+    --pf-v5-global--primary-color--100: var(--avk-accent);
+    --pf-v5-global--primary-color--200: var(--avk-accent-dark);
+    --pf-v5-global--link--Color: var(--avk-accent);
+    --pf-v5-global--link--Color--hover: var(--avk-accent-dark);
+    --pf-v5-global--active-color--100: var(--avk-accent);
+}
+.pf-v5-c-button.pf-m-primary { background-color: var(--avk-accent); }
+.pf-v5-c-button.pf-m-primary:hover { background-color: var(--avk-accent-dark); }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--avk-accent); outline-offset: 2px; }
+.pf-v5-c-brand { max-height: 2.5rem; }

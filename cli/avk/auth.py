@@ -168,6 +168,26 @@ def ensure_delete_account(kc: Keycloak) -> list[str]:
     return changes
 
 
+def ensure_signup_password(kc: Keycloak) -> list[str]:
+    """With "verify email" on, Keycloak 26 hides the password fields on the sign-up form and makes the user set a password
+    after the email link instead. Users expect to choose a password while signing up, so turn that on explicitly."""
+    base = f"/admin/realms/{REALM}/authentication"
+    step = next((e for e in kc.get(f"{base}/flows/registration%20form/executions") or []
+                 if e.get("providerId") == "registration-password-action"), None)
+    if step is None:
+        raise KeycloakError("cannot find the Password Validation step in the registration flow")
+    wanted = {"always_set_password_on_register_form": "true"}
+    cfg_id = step.get("authenticationConfig")
+    if cfg_id:
+        cfg = kc.get(f"{base}/config/{cfg_id}")
+        if (cfg or {}).get("config", {}).get("always_set_password_on_register_form") == "true":
+            return []
+        kc.put(f"{base}/config/{cfg_id}", {**cfg, "config": {**cfg.get("config", {}), **wanted}})
+    else:
+        kc.post(f"{base}/executions/{step['id']}/config", {"alias": "avk-signup-password", "config": wanted})
+    return ["sign-up form asks for a password"]
+
+
 def ensure_admin_otp_flow(kc: Keycloak) -> list[str]:
     """Browser flow = the built-in one plus a conditional step: users with the realm role `admin` must use OTP
     (Keycloak makes them enrol on the spot if they have none). Everyone else may enrol OTP voluntarily."""
@@ -197,6 +217,20 @@ def ensure_admin_otp_flow(kc: Keycloak) -> list[str]:
                 kc.post(f"{base}/executions/{e['id']}/config",
                         {"alias": "admin-role", "config": {"condUserRole": "admin", "negate": "false"}})
         changes.append("admins must use OTP")
+    # The built-in optional-OTP step must not also prompt admins (they would be asked for a code twice in a row, and the
+    # second prompt rejects the code just used). Admins are handled only by the step above; everyone else by this one.
+    optional = next((e for e in kc.get(f"{base}/flows/{quote(forms_alias)}/executions") or []
+                     if e.get("authenticationFlow") and "Conditional 2FA" in e["displayName"]), None)
+    if optional is not None:
+        alias = optional["displayName"]
+        steps = kc.get(f"{base}/flows/{quote(alias)}/executions") or []
+        if not any(s.get("providerId") == "conditional-user-role" for s in steps):
+            kc.post(f"{base}/flows/{quote(alias)}/executions/execution", {"provider": "conditional-user-role"})
+            added = next(s for s in kc.get(f"{base}/flows/{quote(alias)}/executions") if s.get("providerId") == "conditional-user-role")
+            kc.put(f"{base}/flows/{quote(alias)}/executions", {**added, "requirement": "REQUIRED"})
+            kc.post(f"{base}/executions/{added['id']}/config",
+                    {"alias": "not-admin", "config": {"condUserRole": "admin", "negate": "true"}})
+            changes.append("optional OTP step skips admins")
     realm = kc.realm(REALM)
     if realm.get("browserFlow") != ADMIN_FLOW:
         kc.update_realm(REALM, {**realm, "browserFlow": ADMIN_FLOW})
@@ -222,6 +256,7 @@ def apply_realm(kc: Keycloak, env: str, refresh_secrets: bool = False) -> list[s
             changes.append(f"realm settings: {', '.join(sorted(keys))}")
     changes += ensure_roles(kc)
     changes += ensure_delete_account(kc)
+    changes += ensure_signup_password(kc)
     changes += ensure_admin_otp_flow(kc)
     return changes
 
@@ -312,8 +347,29 @@ def apply(env: str, refresh_secrets: bool = False) -> int:
     return 0
 
 
+E2E_DIR = config.REPO_ROOT / "e2e-auth"
+
+
+def run_tests(env: str) -> int:
+    """Browser tests against the stg Keycloak and Mailpit. The CLI admin login is passed in the environment of the test
+    process only (never written to disk, never printed)."""
+    import os
+    if env != "stg":
+        print("fail  the browser tests create and delete users, so they only run against stg")
+        return 1
+    admin = admin_env(env)
+    node_env = {**os.environ, "KC_URL": URLS[env], "MAILPIT_URL": "http://127.0.0.1:4811",
+                "KC_ADMIN_USER": admin["AVK_CLI_USERNAME"], "KC_ADMIN_PASS": admin["AVK_CLI_PASSWORD"]}
+    if not (E2E_DIR / "node_modules").is_dir():
+        if subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=E2E_DIR, shell=True, env=node_env).returncode != 0:
+            return 1
+    return subprocess.run(["npx", "playwright", "test"], cwd=E2E_DIR, shell=True, env=node_env).returncode
+
+
 def main(args) -> int:
     action = args.action
+    if action == "test":
+        return run_tests(args.env)
     if action == "build":
         return build()
     if action == "init":

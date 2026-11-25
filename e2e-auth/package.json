@@ -1,0 +1,12 @@
+{
+  "name": "avk-auth-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Browser tests for the shared Keycloak login: sign up, email verification, login, reset, lockout, OTP, account deletion.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
