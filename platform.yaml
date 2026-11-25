@@ -11,7 +11,12 @@ signing:
   build_identity: https://github.com/avkExplorer/avk-platform/.github/workflows/release.yml@{ref}
   approval_identity: https://github.com/avkExplorer/avk-platform/.github/workflows/approve.yml@{ref}
   approval_predicate_type: https://avkaiexplorer.com/attestations/prod-approval/v1
-  allowed_refs: [refs/heads/main]
+  allowed_refs: [refs/heads/main, e06c5051c6cdbff8064327f1ce1eb57cfac750f3]   # main stays until every app calls the pinned tag below; then remove it
+
+# The commit of the reusable workflows (tag v1) that new apps call.  writes it into the app's workflow files. A signed
+# release carries this exact ref in its identity, so it must also be listed in signing.allowed_refs. Move it forward by tagging a new
+# version, reviewing it, and changing BOTH places in one pull request.
+workflow_ref: e06c5051c6cdbff8064327f1ce1eb57cfac750f3
 
 # Hosts the platform itself serves (Terraform makes a DNS record and tunnel route for each).
 platform_hosts:
