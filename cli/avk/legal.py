@@ -152,7 +152,7 @@ def render(app: str, legal: dict, site_url: str | None = None) -> Rendered:
         "consent_mode": "consent" if analytics else "notice", "reviewed": legal.get("reviewed") is True,
         "data_collected": [str(x) for x in legal.get("data_collected") or []],
         "processors": _processors(legal, missing), "turnstile_site_key": legal.get("turnstile_site_key") or "",
-        "cancellation_steps": legal.get("cancellation_steps") or "",
+        "cancellation_steps": legal.get("cancellation_steps") or "", "contact_form": legal.get("contact_form", True) is not False,
         "security_expires": expires or _todo("effective_date"),
     }
     if expires is None:
@@ -166,13 +166,14 @@ def render(app: str, legal: dict, site_url: str | None = None) -> Rendered:
     out.files[f"{folder}/legal.css"] = (STATIC_DIR / "legal.css").read_text(encoding="utf-8")
     out.files[f"{folder}/consent.js"] = (STATIC_DIR / "consent.js").read_text(encoding="utf-8")
     out.files[f"{str(values['well_known_dir']).strip('/')}/security.txt"] = env.get_template("security.txt.j2").render(**context)
-    ack = mailtpl.render("support_ack", {
-        "brand_name": values["app_title"], "support_email": values["support_email"], "postal_address": legal.get("postal_address") or "",
-        "response_time": values["response_time"], "subject": "Support", "login_url": "", **ACK_PLACEHOLDERS})
-    mail_dir = str(values["mail_dir"]).strip("/")
-    out.files[f"{mail_dir}/support_ack.subject.txt"] = ack["subject"] + "\n"
-    out.files[f"{mail_dir}/support_ack.txt"] = ack["text"]
-    out.files[f"{mail_dir}/support_ack.html"] = ack["html"]
+    if context["contact_form"]:                         # a site with no server code (static) has no form to acknowledge
+        ack = mailtpl.render("support_ack", {
+            "brand_name": values["app_title"], "support_email": values["support_email"], "postal_address": legal.get("postal_address") or "",
+            "response_time": values["response_time"], "subject": "Support", "login_url": "", **ACK_PLACEHOLDERS})
+        mail_dir = str(values["mail_dir"]).strip("/")
+        out.files[f"{mail_dir}/support_ack.subject.txt"] = ack["subject"] + "\n"
+        out.files[f"{mail_dir}/support_ack.txt"] = ack["text"]
+        out.files[f"{mail_dir}/support_ack.html"] = ack["html"]
     out.footer = env.get_template("_footer.html.j2").render(**context)
     out.missing = sorted(missing)
     return out

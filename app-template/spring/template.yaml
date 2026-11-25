@@ -1,0 +1,10 @@
+# Which template files exist for which kind of app. A file is created only if its `when` condition is true; the first matching rule wins,
+# a file no rule matches is always created. Flags: web, api, static, auth, noauth, db, nodb. A file name ending in `@flag-flag` is a
+# variant that exists only when all those flags are true (several variants share one destination name). `[[if cond]]` ... `[[end]]` lines
+# inside a file keep or drop a block the same way.
+files:
+  - {path: "*/contact/*", when: "web"}
+  - {path: "*/legacy/*", when: "web"}
+  - {path: "src/main/resources/redirects.csv", when: "web"}
+  - {path: "src/main/resources/db/*", when: "db"}
+  - {path: "seed/*", when: "db"}

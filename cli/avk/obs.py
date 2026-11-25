@@ -90,20 +90,29 @@ def prod_container_names(apps: list[str] | None = None) -> list[str]:
     return names
 
 
-def build_targets(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """(prometheus app targets, alloy log targets) for these containers. Only containers labelled avk.app expose metrics."""
+def static_apps() -> frozenset[str]:
+    """Apps served by nginx (type static): they log JSON but expose no Prometheus metrics."""
+    try:
+        return frozenset(str(a.get("name")) for a in config.load().apps if a.get("type") == "static")
+    except Exception:  # noqa: BLE001
+        return frozenset()
+
+
+def build_targets(rows: list[dict], static: frozenset[str] = frozenset()) -> tuple[list[dict], list[dict]]:
+    """(prometheus app targets, alloy log targets) for these containers. Only containers labelled avk.app expose metrics,
+    except static apps (no metrics endpoint)."""
     metrics, logs = [], []
     for row in rows:
         app = row["app"] or row["service"] or row["name"]
         logs.append({"targets": ["localhost"], "labels": {
             "__path__": f"/var/lib/docker/containers/{row['id']}/{row['id']}-json.log", "container": row["name"], "app": app, "env": "prod"}})
-        if row["app"]:
+        if row["app"] and row["app"] not in static:
             metrics.append({"targets": [f"{row['name']}:{APP_METRICS_PORT}"], "labels": {"app": row["app"], "container": row["name"]}})
     return metrics, logs
 
 
 def write_targets(rows: list[dict]) -> tuple[int, int]:
-    metrics, logs = build_targets(rows)
+    metrics, logs = build_targets(rows, static_apps())
     folder = state_dir()
     folder.mkdir(parents=True, exist_ok=True)
     for name, data in (("apps.json", metrics), ("logs.json", logs)):

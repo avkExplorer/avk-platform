@@ -459,8 +459,22 @@ def run_tests(env: str) -> int:
     return subprocess.run(["npx", "playwright", "test"], cwd=E2E_DIR, shell=True, env=node_env).returncode
 
 
+def client_delete(app_name: str, env: str) -> int:
+    """Remove an app's login client (retire-app). Missing client = nothing to do. The client secret in the app's env file stays."""
+    kc = connect(env)
+    found = kc.get(f"/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(app_name)}")
+    if not found:
+        print(f"ok    no client {app_name} on {env}: nothing to delete")
+        return 0
+    kc.delete(f"/admin/realms/{REALM}/clients/{found[0]['id']}")
+    print(f"ok    deleted the login client {app_name} on {env}")
+    return 0
+
+
 def main(args) -> int:
     action = args.action
+    if action == "client-delete":
+        return client_delete(args.app, args.env)
     if action == "test":
         return run_tests(args.env)
     if action == "build":

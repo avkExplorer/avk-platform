@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, health, landing, legal, logs, mail, obs, prod, secretgen, stg, tf, truststore
+from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, health, landing, legal, logs, mail, newapp, obs, prod, secretgen, stg, tf, truststore
 from avk.deployer import agent
 
 
@@ -167,6 +167,26 @@ def build_parser() -> argparse.ArgumentParser:
     aclient.add_argument("--env", choices=["stg", "prod"], required=True)
     aclient.add_argument("--rotate", action="store_true", help="issue a new client secret")
     aclient.set_defaults(func=auth.main)
+
+    acd = authp.add_parser("client-delete", help="delete an app's login client (used by retire-app)")
+    acd.add_argument("app")
+    acd.add_argument("--env", choices=["stg", "prod"], required=True)
+    acd.set_defaults(func=auth.main)
+
+    nap = sub.add_parser("new-app", help="onboard an app: repo, pipeline, DNS, database, login, policy pages, stg (re-runnable)")
+    nap.add_argument("name")
+    nap.add_argument("--type", choices=sorted(config.APP_TYPES), default="web")
+    nap.add_argument("--no-auth", action="store_true", help="no login (every path public)")
+    nap.add_argument("--no-db", action="store_true", help="no database")
+    nap.add_argument("--site", help="static apps: the folder with the pages ('.' = the repository root); detected if omitted")
+    nap.add_argument("--update-template", action="store_true", help="overwrite files that differ from the template (default: report them)")
+    nap.add_argument("--yes", action="store_true", help="you have read the plan (see --dry-run): do all the outward-facing steps")
+    nap.add_argument("--dry-run", action="store_true", help="print the plan and the confirmations it needs; change nothing")
+    nap.set_defaults(func=newapp.main_new)
+    rap = sub.add_parser("retire-app", help="DESTRUCTIVE: remove an app from prod and stg, archive its repo (databases are kept)")
+    rap.add_argument("name")
+    rap.add_argument("--confirm", help='type "retire <name>" to go ahead')
+    rap.set_defaults(func=newapp.main_retire)
 
     seedp = sub.add_parser("seed", help="load synthetic data into stg (never prod)")
     seedp.add_argument("app")

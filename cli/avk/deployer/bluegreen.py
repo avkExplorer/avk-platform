@@ -132,8 +132,12 @@ class Deployer:
 
         env_file = self.secrets_root / f"{app}.env"
         migrator_file = self.secrets_root / f"{app}.migrator.env"
-        if not env_file.is_file() or (not rollback and not migrator_file.is_file()):
+        # An app that declares no migrations and no environment (a static site) has no secrets at all: it runs without an env file.
+        needs_secrets = bool(contract.get("migrations")) or bool(contract.get("env"))
+        if needs_secrets and (not env_file.is_file() or (not rollback and not migrator_file.is_file())):
             return self.fail(t, "secrets", f"missing secret files for {app}: run `avk secrets init {app} --env prod`")
+        if not needs_secrets:
+            env_file = None
 
         ref = f"{t.image}@{t.digest}"
         ok, msg = self.docker.pull(ref)

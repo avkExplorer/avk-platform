@@ -1,0 +1,52 @@
+# Runs on every merge to main: repeat the gates on the merge result, build ONE signed image, prove it in the ci stack,
+# then wait for the owner's approval of `prod`. Nothing here connects to the owner's PC.
+# The platform's reusable workflows are referenced at a pinned version (a commit SHA), so a change to them reaches this app only through a pull request here.
+name: release
+
+on:
+  push:
+    branches: [main]
+    # Documentation and Wall metadata do not change what runs, so they do not start a release that needs approval.
+    paths-ignore:
+      - "**.md"
+      - "wall.json"
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gates:
+    permissions:
+      contents: read
+      security-events: write
+    uses: __OWNER__/avk-platform/.github/workflows/ci.yml@__PLATFORM_REF__
+    with:
+      stack: static
+
+  release:
+    needs: gates
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: __OWNER__/avk-platform/.github/workflows/release.yml@__PLATFORM_REF__
+    with:
+      app-name: __APP__
+      stack: static
+      expected-identity: https://github.com/__OWNER__/avk-platform/.github/workflows/release.yml@__PLATFORM_ID_REF__
+
+  approve:
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      deployments: write
+    uses: __OWNER__/avk-platform/.github/workflows/approve.yml@__PLATFORM_REF__
+    with:
+      app-name: __APP__
+      image: ${{ needs.release.outputs.image }}
+      digest: ${{ needs.release.outputs.digest }}
