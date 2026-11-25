@@ -103,9 +103,9 @@ the tunnel token is written to `%AVK_HOME%\secrets\platform\tunnel.token`.
 ## Prod stack (`runtime/compose.prod.yaml`)
 
 `avk prod up|down|status` runs `cloudflared` (outbound tunnel, token read from a secret file), `traefik`
-(routes by Host header, file provider, no Docker socket) and a `whoami` test target on the private `avk-prod`
+(routes by Host header, file provider, no Docker socket) and `pg-prod` (Postgres) on the private `avk-prod`
 network. Images are pinned by digest; containers are read-only, drop all capabilities and have memory limits.
-Traefik is published only on `127.0.0.1:4900`. Routes live in `%AVK_HOME%\state\traefik`.
+Traefik is published only on `127.0.0.1:4900`. Routes live in the Docker volume `avk-prod-routes`, written by the deployer.
 Checked 2026-11-17: tunnel healthy with 4 connections; `https://hello.avkaiexplorer.com` answers from this PC;
 HTTP redirects to HTTPS; `www` redirects to the apex keeping path and query; DNS shows only Cloudflare addresses.
 

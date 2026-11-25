@@ -91,14 +91,6 @@ services:
     mem_limit: 768m
     cpus: 1.0
 
-  # Phase 1 test target for hello.avkaiexplorer.com. Phase 4 replaces it with the real app colours.
-  whoami:
-    <<: *hardened
-    image: traefik/whoami@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
-    networks: [prod]
-    mem_limit: 64m
-    cpus: 0.25
-
 secrets:
   tunnel_token:
     file: ${AVK_HOME_SLASH}/secrets/platform/tunnel.token
