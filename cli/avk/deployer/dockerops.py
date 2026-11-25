@@ -1,11 +1,14 @@
 """Docker operations for the deployer, via the docker CLI. App containers are run with fixed hardening; none of them
-gets the Docker socket, a host folder, or a published port (Traefik reaches them on the private avk-prod network)."""
+gets the Docker socket, a host folder, or a published port (Traefik reaches them on the private avk-prod network). The one
+exception, only for an app whose avk.yaml says `host_truststore: true`: a read-only Java truststore of this PC's public roots."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 from typing import Callable
+
+from avk import truststore as _truststore
 
 NETWORK = "avk-prod"
 # Small pinned image used only to make HTTP requests from inside the avk-prod network (smoke tests, readiness).
@@ -58,7 +61,8 @@ class Docker:
         code, out, err = self._run(argv, None)
         return code, (out + err).strip()[-400:]
 
-    def start_app(self, name: str, ref: str, env_file: Path, labels: dict[str, str]) -> tuple[bool, str]:
+    def start_app(self, name: str, ref: str, env_file: Path, labels: dict[str, str],
+                  truststore: Path | None = None) -> tuple[bool, str]:
         self.remove(name)
         argv = ["docker", "run", "-d", "--name", name, "--network", NETWORK, "--restart", "unless-stopped",
                 "--read-only", "--tmpfs", "/tmp:rw,nosuid,size=64m", "--cap-drop", "ALL",
@@ -66,6 +70,8 @@ class Docker:
                 "--env-file", str(env_file), "--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3"]
         for k, v in labels.items():
             argv += ["--label", f"{k}={v}"]
+        if truststore is not None:
+            argv += ["-v", f"{truststore.as_posix()}:{_truststore.CONTAINER_PATH}:ro", "-e", f"JAVA_TOOL_OPTIONS={_truststore.java_options()}"]
         code, _, err = self._run(argv + [ref], None)
         return code == 0, (err.strip().splitlines() or [""])[-1][:200]
 

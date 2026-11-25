@@ -19,6 +19,7 @@ Copied from `hello`, where it is built and tested. Use it together with `python 
 5. Put the axe test in the app's `e2e/tests` and list the app's pages in it.
 
 ## Traps
+- On this PC Norton re-signs outgoing TLS, so mail to Resend fails in Java unless the app has `host_truststore: true` in `avk.yaml` (the deployer then mounts the truststore built by `avk certs refresh`).
 - The contact form cannot carry a CSRF token (static page), so anyone can make it send the acknowledgement to an address they type.
   The acknowledgement contains no message text, and the rate limit plus Turnstile bound the abuse. Turn Turnstile on before real traffic.
 - A servlet filter must be `HIGHEST_PRECEDENCE` to run before Spring Security, or old addresses answer 401/login instead of 301.

@@ -164,8 +164,9 @@ class FakeDocker:
         self.calls.append(("migrate", ref, env_file.name))
         return self.migration_code, "migration output"
 
-    def start_app(self, name, ref, env_file, labels):
+    def start_app(self, name, ref, env_file, labels, truststore=None):
         self.calls.append(("start", name, env_file.name))
+        self.truststore = truststore
         return True, ""
 
     def stop(self, name):
