@@ -1,0 +1,249 @@
+"""`avk auth`: the shared Keycloak (login for every app) in stg and prod.
+
+  avk auth build              build the local Keycloak image (pinned base + `kc build` + the AVK theme)
+  avk auth init --env E       secrets + database for Keycloak (idempotent; needs pg-E running)
+  avk auth apply --env E      apply the realm `avk` (runtime/keycloak/realm-avk.json) to the running Keycloak
+  avk auth client APP --env E create or update the app's confidential client and write its secret
+
+Keycloak itself is started by the stack's compose file (stg: `avk stg up`, prod: `avk prod up`).
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import urllib.parse
+
+from avk import config, dbadmin, secretgen
+from avk.keycloak import Keycloak, KeycloakError, drift
+
+KEYCLOAK_VERSION = "26.8.2"
+IMAGE = f"avk/keycloak:{KEYCLOAK_VERSION}"
+KEYCLOAK_DIR = config.REPO_ROOT / "runtime" / "keycloak"
+URLS = {"stg": "http://127.0.0.1:4810", "prod": "https://auth.avkaiexplorer.com"}
+ADMIN_URLS = {"stg": "http://127.0.0.1:4810", "prod": "http://127.0.0.1:4910"}   # where the CLI reaches the admin API
+
+
+def sh(argv: list[str], timeout: int = 900) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, text=True, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
+
+
+def image_exists() -> bool:
+    return sh(["docker", "image", "inspect", IMAGE]).returncode == 0
+
+
+def build(force: bool = True) -> int:
+    if not force and image_exists():
+        return 0
+    print(f"building {IMAGE} (the base image is about 750 MB on the first build)")
+    done = sh(["docker", "build", "-q", "-t", IMAGE, str(KEYCLOAK_DIR)])
+    if done.returncode != 0:
+        print("fail  docker build:", (done.stderr.strip().splitlines() or ["unknown error"])[-1])
+        return 1
+    print(f"ok    {IMAGE} built")
+    return 0
+
+
+def init(env: str) -> int:
+    for line in secretgen.ensure_keycloak(env):
+        print(f"created {line}")
+    return dbadmin.create_keycloak(env)
+
+
+def prepare_stack(env: str) -> int:
+    """What a stack needs before Keycloak can start: image, secret files, database. Called by `avk stg up`."""
+    if build(force=False) != 0:
+        return 1
+    for line in secretgen.ensure_keycloak(env):
+        print(f"created {line}")
+    return 0
+
+
+# --------------------------------------------------------------------------------------------------- realm as code
+REALM = "avk"
+REALM_FILE = KEYCLOAK_DIR / "realm-avk.json"
+ADMIN_FLOW = "avk-browser"             # copy of the built-in browser flow plus "admins must use OTP"
+ADMIN_SUBFLOW = "avk-admin-2fa"
+SMTP_FROM = "noreply@notify.avkaiexplorer.com"
+
+
+def quote(alias: str) -> str:
+    return urllib.parse.quote(alias, safe="")
+
+
+def smtp_settings(env: str) -> dict:
+    """stg: every mail goes to Mailpit. prod: Resend's SMTP, using the same API key as the Phase 2 transactional mail."""
+    base = {"from": SMTP_FROM, "fromDisplayName": "AVK Explorer", "replyTo": "support@avkaiexplorer.com"}
+    if env == "stg":
+        return {**base, "host": "mailpit", "port": "1025", "auth": "false", "ssl": "false", "starttls": "false"}
+    key = secretgen.parse_env((config.avk_home() / "secrets" / "platform" / "mail.env").read_text(encoding="utf-8")) \
+        .get("RESEND_API_KEY", "") if (config.avk_home() / "secrets" / "platform" / "mail.env").is_file() else ""
+    if not key:
+        raise SystemExit("fail  prod mail key missing: run tools\\set-mail-secret.ps1 (Phase 2) first")
+    return {**base, "host": "smtp.resend.com", "port": "465", "ssl": "true", "starttls": "false", "auth": "true",
+            "user": "resend", "password": key}
+
+
+def admin_env(env: str) -> dict[str, str]:
+    path = secretgen.keycloak_files(env)["admin"]
+    if not path.is_file():
+        raise SystemExit(f"fail  {path} missing: run `avk auth init --env {env}` first")
+    return secretgen.parse_env(path.read_text(encoding="utf-8"))
+
+
+def connect(env: str, kc: Keycloak | None = None) -> Keycloak:
+    """A logged-in client. Logs in as the `avk-cli` user; on the very first run creates it (see bootstrap)."""
+    kc = kc or Keycloak(ADMIN_URLS[env])
+    kc.wait_ready()
+    admin = admin_env(env)
+    try:
+        kc.login(admin["AVK_CLI_USERNAME"], admin["AVK_CLI_PASSWORD"])
+        return kc
+    except KeycloakError:
+        pass
+    bootstrap(kc, env, admin)
+    kc.login(admin["AVK_CLI_USERNAME"], admin["AVK_CLI_PASSWORD"])
+    return kc
+
+
+def ensure_master_admin(kc: Keycloak, username: str, password: str, required_actions: list[str]) -> None:
+    """A master-realm user with the `admin` role and the given password (created once; never changed afterwards)."""
+    found = kc.get(f"/admin/realms/master/users?username={username}&exact=true")
+    if not found:
+        kc.post("/admin/realms/master/users", {
+            "username": username, "enabled": True, "emailVerified": True, "requiredActions": required_actions,
+            "credentials": [{"type": "password", "value": password, "temporary": False}]})
+        found = kc.get(f"/admin/realms/master/users?username={username}&exact=true")
+    role = kc.get("/admin/realms/master/roles/admin")
+    kc.post(f"/admin/realms/master/users/{found[0]['id']}/role-mappings/realm", [role])
+
+
+def bootstrap(kc: Keycloak, env: str, admin: dict[str, str]) -> None:
+    """First run only: with the TEMPORARY admin, create the two permanent admins, then delete the temporary one.
+      avk-admin  the person's console login; must enrol OTP at first login (required action).
+      avk-cli    non-human, no OTP, used only by this CLI (a script cannot type an OTP code)."""
+    runtime = secretgen.parse_env(secretgen.keycloak_files(env)["runtime"].read_text(encoding="utf-8"))
+    try:
+        kc.login(runtime["KC_BOOTSTRAP_ADMIN_USERNAME"], runtime["KC_BOOTSTRAP_ADMIN_PASSWORD"])
+    except KeycloakError as exc:
+        raise SystemExit(f"fail  {exc}. The temporary admin is already gone and avk-cli cannot log in: "
+                         "see RUNBOOK 'Keycloak locked out' (kc.sh bootstrap-admin).")
+    print("bootstrap: creating the permanent admins")
+    ensure_master_admin(kc, admin["AVK_ADMIN_USERNAME"], admin["AVK_ADMIN_PASSWORD"], ["CONFIGURE_TOTP"])
+    ensure_master_admin(kc, admin["AVK_CLI_USERNAME"], admin["AVK_CLI_PASSWORD"], [])
+    kc.login(admin["AVK_CLI_USERNAME"], admin["AVK_CLI_PASSWORD"])      # from here on only the CLI user is used
+    for temp in kc.get(f"/admin/realms/master/users?username={runtime['KC_BOOTSTRAP_ADMIN_USERNAME']}&exact=true") or []:
+        kc.delete(f"/admin/realms/master/users/{temp['id']}")
+    print("bootstrap: done; temporary admin deleted. Log in to the console as the admin and enrol OTP.")
+
+
+def ensure_roles(kc: Keycloak) -> list[str]:
+    changes = []
+    for role in ("user", "admin"):
+        if kc.get(f"/admin/realms/{REALM}/roles/{role}") is None:
+            kc.post(f"/admin/realms/{REALM}/roles", {"name": role, "description": f"AVK {role}"})
+            changes.append(f"role {role}")
+    default = kc.get(f"/admin/realms/{REALM}/roles/default-roles-{REALM}/composites") or []
+    if "user" not in {r["name"] for r in default}:
+        user = kc.get(f"/admin/realms/{REALM}/roles/user")
+        kc.post(f"/admin/realms/{REALM}/roles/default-roles-{REALM}/composites", [user])
+        changes.append("default role includes user")
+    return changes
+
+
+def ensure_delete_account(kc: Keycloak) -> list[str]:
+    """Users may delete their own account: enable the required action and give every user the account `delete-account` role."""
+    changes = []
+    action = kc.get(f"/admin/realms/{REALM}/authentication/required-actions/delete_account")
+    if action is not None and not action.get("enabled"):
+        kc.put(f"/admin/realms/{REALM}/authentication/required-actions/delete_account", {**action, "enabled": True})
+        changes.append("delete_account action enabled")
+    account = (kc.get(f"/admin/realms/{REALM}/clients?clientId=account") or [{}])[0]
+    if account.get("id"):
+        role = kc.get(f"/admin/realms/{REALM}/clients/{account['id']}/roles/delete-account")
+        have = kc.get(f"/admin/realms/{REALM}/roles/default-roles-{REALM}/composites") or []
+        if role and role["id"] not in {r["id"] for r in have}:
+            kc.post(f"/admin/realms/{REALM}/roles/default-roles-{REALM}/composites", [role])
+            changes.append("default role includes account delete-account")
+    return changes
+
+
+def ensure_admin_otp_flow(kc: Keycloak) -> list[str]:
+    """Browser flow = the built-in one plus a conditional step: users with the realm role `admin` must use OTP
+    (Keycloak makes them enrol on the spot if they have none). Everyone else may enrol OTP voluntarily."""
+    changes = []
+    base = f"/admin/realms/{REALM}/authentication"
+    flows = {f["alias"] for f in kc.get(f"{base}/flows") or []}
+    if ADMIN_FLOW not in flows:
+        kc.post(f"{base}/flows/browser/copy", {"newName": ADMIN_FLOW})
+        changes.append(f"flow {ADMIN_FLOW} created")
+    forms = next((e for e in kc.get(f"{base}/flows/{quote(ADMIN_FLOW)}/executions") or []
+                  if e.get("authenticationFlow") and e["displayName"].endswith("forms")), None)
+    if forms is None:
+        raise KeycloakError(f"cannot find the forms sub-flow in {ADMIN_FLOW}")
+    forms_alias = forms["displayName"]
+    existing = {e["displayName"] for e in kc.get(f"{base}/flows/{quote(forms_alias)}/executions") or []}
+    if ADMIN_SUBFLOW not in existing:
+        kc.post(f"{base}/flows/{quote(forms_alias)}/executions/flow",
+                {"alias": ADMIN_SUBFLOW, "type": "basic-flow", "provider": "registration-page-form",
+                 "description": "Users with the admin role must use OTP"})
+        sub = next(e for e in kc.get(f"{base}/flows/{quote(forms_alias)}/executions") if e["displayName"] == ADMIN_SUBFLOW)
+        kc.put(f"{base}/flows/{quote(forms_alias)}/executions", {**sub, "requirement": "CONDITIONAL"})
+        kc.post(f"{base}/flows/{quote(ADMIN_SUBFLOW)}/executions/execution", {"provider": "conditional-user-role"})
+        kc.post(f"{base}/flows/{quote(ADMIN_SUBFLOW)}/executions/execution", {"provider": "auth-otp-form"})
+        for e in kc.get(f"{base}/flows/{quote(ADMIN_SUBFLOW)}/executions"):
+            kc.put(f"{base}/flows/{quote(ADMIN_SUBFLOW)}/executions", {**e, "requirement": "REQUIRED"})
+            if e.get("providerId") == "conditional-user-role":
+                kc.post(f"{base}/executions/{e['id']}/config",
+                        {"alias": "admin-role", "config": {"condUserRole": "admin", "negate": "false"}})
+        changes.append("admins must use OTP")
+    realm = kc.realm(REALM)
+    if realm.get("browserFlow") != ADMIN_FLOW:
+        kc.update_realm(REALM, {**realm, "browserFlow": ADMIN_FLOW})
+        changes.append(f"browser flow bound to {ADMIN_FLOW}")
+    return changes
+
+
+def apply_realm(kc: Keycloak, env: str, refresh_secrets: bool = False) -> list[str]:
+    """Idempotent. Returns what changed; an empty list means the realm already matched the file."""
+    desired = json.loads(REALM_FILE.read_text(encoding="utf-8"))
+    desired["smtpServer"] = smtp_settings(env)
+    current = kc.realm(REALM)
+    changes: list[str] = []
+    if current is None:
+        kc.create_realm(desired)
+        changes.append("realm created")
+    else:
+        keys = drift(desired, current)
+        if refresh_secrets and "smtpServer" not in keys:
+            keys.append("smtpServer")
+        if keys:
+            kc.update_realm(REALM, {**current, **desired})
+            changes.append(f"realm settings: {', '.join(sorted(keys))}")
+    changes += ensure_roles(kc)
+    changes += ensure_delete_account(kc)
+    changes += ensure_admin_otp_flow(kc)
+    return changes
+
+
+def apply(env: str, refresh_secrets: bool = False) -> int:
+    try:
+        kc = connect(env)
+        changes = apply_realm(kc, env, refresh_secrets)
+    except KeycloakError as exc:
+        print(f"fail  {exc}")
+        return 1
+    print("changed: " + "; ".join(changes) if changes else f"ok    realm {REALM} on {env}: no changes")
+    return 0
+
+
+def main(args) -> int:
+    action = args.action
+    if action == "build":
+        return build()
+    if action == "init":
+        return init(args.env)
+    if action == "apply":
+        return apply(args.env, args.refresh_secrets)
+    print(f"fail  unknown action {action}")
+    return 1

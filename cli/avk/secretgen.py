@@ -76,6 +76,35 @@ def ensure_platform(env_names: tuple[str, ...] = ENVS) -> list[str]:
     return created
 
 
+def keycloak_files(env: str) -> dict[str, Path]:
+    d = secrets_dir(env)
+    return {"runtime": d / "keycloak.env", "admin": d / "keycloak-admin.env"}
+
+
+def ensure_keycloak(env: str) -> list[str]:
+    """Keycloak's secrets, never overwritten once they exist.
+    keycloak.env       goes to the Keycloak container: its database login and the TEMPORARY bootstrap admin.
+    keycloak-admin.env is read only by the avk CLI: the permanent console admin (`avk-admin`, OTP enrolled by the owner at
+                       first login) and a separate non-human admin user `avk-cli` that the CLI itself logs in as (a person
+                       with OTP cannot log in from a script, so the CLI never uses the console admin's password).
+    Missing keys are added; existing values are never changed."""
+    files = keycloak_files(env)
+    wanted = {
+        "runtime": {"KC_DB_USERNAME": "keycloak", "KC_DB_PASSWORD": new_value(),
+                    "KC_BOOTSTRAP_ADMIN_USERNAME": "temp-admin", "KC_BOOTSTRAP_ADMIN_PASSWORD": new_value()},
+        "admin": {"AVK_ADMIN_USERNAME": "avk-admin", "AVK_ADMIN_PASSWORD": new_value(32),
+                  "AVK_CLI_USERNAME": "avk-cli", "AVK_CLI_PASSWORD": new_value(32)},
+    }
+    created = []
+    for kind, path in files.items():
+        existing = parse_env(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        merged = {**wanted[kind], **existing}
+        if merged != existing:
+            write_private(path, "".join(f"{k}={v}\n" for k, v in merged.items()))
+            created.append(f"{env}/{path.name}")
+    return created
+
+
 def app_files(app: str, env: str) -> dict[str, Path]:
     d = secrets_dir(env)
     return {"runtime": d / f"{app}.env", "migrator": d / f"{app}.migrator.env", "ro": d / f"{app}.ro.env"}

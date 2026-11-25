@@ -50,6 +50,41 @@ services:
     mem_limit: 128m
     cpus: 0.25
 
+  # Login for stg apps. Image built locally by `avk auth build` (base digest pinned in runtime/keycloak/Dockerfile).
+  # The browser sees http://127.0.0.1:4810; containers on this network call http://keycloak:8080. KC_HOSTNAME is the
+  # browser URL (so the token issuer matches what the browser used) and the dynamic backchannel lets containers use
+  # the internal address for token, JWKS and userinfo calls.
+  keycloak:
+    <<: *hardened
+    image: avk/keycloak:26.8.2
+    command: ["start", "--optimized"]
+    env_file:
+      - ${AVK_HOME_SLASH}/secrets/stg/keycloak.env
+    environment:
+      KC_DB_URL: jdbc:postgresql://pg-stg:5432/keycloak
+      KC_HOSTNAME: http://127.0.0.1:4810
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_LOG_CONSOLE_OUTPUT: json
+      JAVA_OPTS_KC_HEAP: -XX:InitialRAMPercentage=40 -XX:MaxRAMPercentage=70
+    ports:
+      - "127.0.0.1:4810:8080"
+    # /tmp and Keycloak's data folder are scratch space only; everything that matters is in the database.
+    tmpfs:
+      - /tmp
+      - /opt/keycloak/data:uid=1000,gid=0,mode=0770
+    depends_on:
+      pg-stg: {condition: service_healthy}
+    networks: [stg]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    mem_limit: 1g
+    cpus: 1.5
+
   # Index page listing the registered apps (generated from platform.yaml by `avk stg up`).
   index:
     <<: *hardened

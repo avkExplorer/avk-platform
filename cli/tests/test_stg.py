@@ -26,7 +26,10 @@ def test_stg_stack_is_isolated_from_prod_and_bound_to_loopback():
     ports = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("- \"") and ":" in ln]
     assert ports and all(p.startswith('- "127.0.0.1:') for p in ports)
     images = [ln.split("image:", 1)[1].split()[0] for ln in text.splitlines() if ln.strip().startswith("image:")]
-    assert images and all("@sha256:" in i for i in images)
+    # Every image is pinned by digest, except the locally built `avk/keycloak`, whose base is pinned in its Dockerfile.
+    assert images and all("@sha256:" in i or i.startswith("avk/keycloak:") for i in images)
+    dockerfile = (config.REPO_ROOT / "runtime" / "keycloak" / "Dockerfile").read_text(encoding="utf-8")
+    assert any(ln.startswith("FROM ") and "@sha256:" in ln for ln in dockerfile.splitlines())
 
 
 def test_prod_compose_publishes_nothing_but_loopback_and_pins_images():

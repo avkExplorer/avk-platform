@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, backup, config, dbadmin, doctor, landing, mail, prod, secretgen, stg, tf
+from avk import __version__, auth, backup, config, dbadmin, doctor, landing, mail, prod, secretgen, stg, tf
 from avk.deployer import agent
 
 
@@ -120,6 +120,16 @@ def build_parser() -> argparse.ArgumentParser:
             a.add_argument("--build", action="store_true", help="rebuild the app from its sibling folder")
             a.add_argument("--digest", help="run a published image by digest instead of a local build")
         a.set_defaults(func=stg.main)
+
+    authp = sub.add_parser("auth", help="shared Keycloak login (image, database, realm, clients)").add_subparsers(dest="action", required=True)
+    authp.add_parser("build", help="build the local Keycloak image").set_defaults(func=auth.main)
+    ainit = authp.add_parser("init", help="Keycloak secrets and database for one environment")
+    ainit.add_argument("--env", choices=["stg", "prod"], required=True)
+    ainit.set_defaults(func=auth.main)
+    aapply = authp.add_parser("apply", help="apply the realm file to the running Keycloak (idempotent)")
+    aapply.add_argument("--env", choices=["stg", "prod"], required=True)
+    aapply.add_argument("--refresh-secrets", action="store_true", help="also re-send the SMTP password (after rotating the mail key)")
+    aapply.set_defaults(func=auth.main)
 
     seedp = sub.add_parser("seed", help="load synthetic data into stg (never prod)")
     seedp.add_argument("app")

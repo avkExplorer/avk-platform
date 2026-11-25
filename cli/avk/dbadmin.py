@@ -51,6 +51,38 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO {r['ro']};
     return server, database
 
 
+def keycloak_sql(password: str) -> str:
+    """Keycloak manages its own schema (Liquibase), so it gets ONE role that owns its database, unlike apps, which get
+    three roles. The role can reach nothing else: no other database, no PUBLIC rights."""
+    return f"""DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'keycloak') THEN
+    CREATE ROLE keycloak LOGIN PASSWORD '{password}' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+  ELSE
+    ALTER ROLE keycloak LOGIN PASSWORD '{password}' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+  END IF;
+END
+$$;
+SELECT 'CREATE DATABASE keycloak OWNER keycloak' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'keycloak')\\gexec
+ALTER DATABASE keycloak OWNER TO keycloak;
+REVOKE ALL ON DATABASE keycloak FROM PUBLIC;
+GRANT CONNECT ON DATABASE keycloak TO keycloak;
+"""
+
+
+def create_keycloak(env: str) -> int:
+    path = secretgen.keycloak_files(env)["runtime"]
+    if not path.is_file():
+        raise SystemExit(f"fail  {path} missing: run `avk auth init --env {env}` first")
+    password = secretgen.parse_env(path.read_text(encoding="utf-8"))["KC_DB_PASSWORD"]
+    done = psql(env, "postgres", keycloak_sql(password))
+    if done.returncode != 0:
+        print("fail  creating the keycloak database:", done.stderr.strip().splitlines()[-1] if done.stderr.strip() else "unknown error")
+        return 1
+    print(f"ok    database keycloak and role keycloak are in place on pg-{env}")
+    return 0
+
+
 def psql(env: str, database: str, sql: str) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", "exec", "-i", container_name(env), "psql", "-U", "postgres", "-d", database,
                            "-v", "ON_ERROR_STOP=1", "-q", "-X"],

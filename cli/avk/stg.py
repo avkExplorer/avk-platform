@@ -86,9 +86,17 @@ def run_args(app: str, port: int, container_port: int, env_file: Path, image: st
 
 
 def ensure_infra(apps: list[dict]) -> int:
+    from avk import auth, dbadmin
+
     secretgen.ensure_platform(("stg",))
     write_index(apps)
-    code = compose(["up", "-d", "--wait", "--wait-timeout", "120"]).returncode
+    if auth.prepare_stack("stg") != 0:                    # Keycloak image and secret files
+        return 1
+    if compose(["up", "-d", "--wait", "--wait-timeout", "120", "pg-stg"]).returncode != 0:
+        return 1
+    if dbadmin.create_keycloak("stg") != 0:               # its database must exist before Keycloak starts
+        return 1
+    code = compose(["up", "-d", "--wait", "--wait-timeout", "180"]).returncode
     if code != 0:
         compose(["ps"])
     return code
