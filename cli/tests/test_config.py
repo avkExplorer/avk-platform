@@ -74,3 +74,31 @@ def test_bad_domain():
 def test_repo_platform_yaml_is_valid():
     errors, _ = config.validate(config.load())
     assert errors == []
+
+
+def _platform_with_signing(**overrides):
+    signing = {
+        "issuer": "https://token.actions.githubusercontent.com",
+        "build_identity": "https://github.com/me/avk-platform/.github/workflows/release.yml@{ref}",
+        "approval_identity": "https://github.com/me/avk-platform/.github/workflows/approve.yml@{ref}",
+        "approval_predicate_type": "https://example.com/p/v1",
+        "allowed_refs": ["refs/heads/main"],
+    }
+    signing.update(overrides)
+    return config.Platform(domain="example.com", github_owner="me", raw={"signing": signing})
+
+
+def test_signing_block_accepts_exact_identities():
+    assert config.signing_errors(_platform_with_signing()) == []
+
+
+def test_signing_block_rejects_wildcards_and_wrong_repo():
+    bad = _platform_with_signing(build_identity="https://github.com/me/avk-platform/.github/workflows/release.yml@.*")
+    assert any("exact identity" in e for e in config.signing_errors(bad))
+    other = _platform_with_signing(approval_identity="https://github.com/evil/avk-platform/.github/workflows/approve.yml@{ref}")
+    assert any("approval_identity must start with" in e for e in config.signing_errors(other))
+    assert any("wildcards" in e for e in config.signing_errors(_platform_with_signing(allowed_refs=["refs/heads/*"])))
+
+
+def test_signing_block_is_optional():
+    assert config.signing_errors(config.Platform(domain="example.com", github_owner="me")) == []

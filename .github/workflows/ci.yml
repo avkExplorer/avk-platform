@@ -70,10 +70,28 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Secret scan (gitleaks)
+      - name: Secret scan (gitleaks, this change's commits only)
         id: secrets
         continue-on-error: true
-        run: docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --redact --no-banner -v /repo
+        # Scans only the commits this pull request or push adds. Scanning every branch (the default) would let a leak
+        # on one branch fail every unrelated pull request.
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          zero=0000000000000000000000000000000000000000
+          if [ "$EVENT" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..$AFTER"
+          else
+            range="$AFTER" # first push, or the old tip is gone: scan everything reachable from this commit
+          fi
+          echo "gitleaks range: $range"
+          docker run --rm -v "$PWD:/repo:ro" "$GITLEAKS_IMAGE" git --redact --no-banner -v --log-opts="$range" /repo
 
       - name: Dependency scan (Trivy, fixable High and Critical)
         id: deps
@@ -136,10 +154,26 @@ jobs:
         id: sarif
         if: steps.codeql.outcome == 'success'
         continue-on-error: true
+        # CodeQL stores a query's severity on the rule (driver or extension), not on each result, so look it up by rule id.
         run: |
-          count=$(cat sarif-results/*.sarif | jq '[.runs[].results[]? | select(.level == "error")] | length')
-          echo "error-level CodeQL findings: $count"
-          [ "$count" -eq 0 ]
+          found=$(cat sarif-results/*.sarif | jq -r '
+            .runs[]
+            | ([(.tool.driver.rules[]?), (.tool.extensions[]?.rules[]?)]
+               | map({key: .id, value: (.defaultConfiguration.level // "warning")}) | from_entries) as $level
+            | .results[]?
+            | select((.level // $level[.ruleId] // "warning") == "error")
+            | "\(.ruleId) \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"')
+          echo "error-level CodeQL findings:"; echo "${found:-none}"
+          [ -z "$found" ]
+
+      - name: Upload CodeQL results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-sarif
+          path: sarif-results
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Summary and enforcement
         if: always()

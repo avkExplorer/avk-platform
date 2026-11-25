@@ -77,6 +77,35 @@ def load(path: Path = PLATFORM_FILE) -> Platform:
     )
 
 
+def signing_errors(p: Platform) -> list[str]:
+    """Checks the `signing:` block. Identities must be exact: no wildcards, and they must name the platform repo."""
+    signing = p.raw.get("signing")
+    if signing is None:
+        return []  # not required before Phase 3 finishes
+    if not isinstance(signing, dict):
+        return ["signing must be a mapping"]
+    errors: list[str] = []
+    if signing.get("issuer") != "https://token.actions.githubusercontent.com":
+        errors.append("signing.issuer must be https://token.actions.githubusercontent.com")
+    prefix = f"https://github.com/{p.github_owner}/avk-platform/.github/workflows/"
+    for key, workflow in (("build_identity", "release.yml"), ("approval_identity", "approve.yml")):
+        value = str(signing.get(key, ""))
+        if not value.startswith(prefix + workflow + "@"):
+            errors.append(f"signing.{key} must start with {prefix}{workflow}@")
+        if any(c in value for c in "*?[]()|^$+\\"):
+            errors.append(f"signing.{key} must be an exact identity (no wildcards or regular expressions)")
+        if not value.endswith("@{ref}"):
+            errors.append(f"signing.{key} must end with @{{ref}}")
+    refs = signing.get("allowed_refs")
+    if not isinstance(refs, list) or not refs or not all(isinstance(r, str) and r.strip() for r in refs):
+        errors.append("signing.allowed_refs must be a non-empty list")
+    elif any(any(c in r for c in "*?") for r in refs):
+        errors.append("signing.allowed_refs must not contain wildcards")
+    if not str(signing.get("approval_predicate_type", "")).startswith("https://"):
+        errors.append("signing.approval_predicate_type must be a URL")
+    return errors
+
+
 def validate(p: Platform) -> tuple[list[str], list[str]]:
     """Return (errors, warnings) for a loaded platform.yaml."""
     errors: list[str] = []
@@ -85,6 +114,8 @@ def validate(p: Platform) -> tuple[list[str], list[str]]:
         errors.append(f"domain '{p.domain}' is not a valid lowercase domain")
     if not p.github_owner or p.github_owner.startswith("<"):
         warnings.append("github_owner is not set yet (needed from Phase 3)")
+
+    errors += signing_errors(p)
 
     seen_names: set[str] = set()
     seen_ports: set[int] = set()
