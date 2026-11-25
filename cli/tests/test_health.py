@@ -92,3 +92,14 @@ def test_backup_drive_missing_is_reported(tmp_path):
     r = Rig(tmp_path, drive=[("backup-drive-missing", "backup drive D: is not connected, so tonight's backup will fail")])
     r.run()
     assert "backup drive D: is not connected" in r.sent[0][0]
+
+
+def test_health_is_a_registered_command_and_exits_nonzero_only_when_there_are_problems(monkeypatch, capsys):
+    from avk import cli
+
+    args = cli.build_parser().parse_args(["health"])
+    assert args.func is health.main
+    monkeypatch.setattr(health, "run", lambda: [])
+    assert health.main(args) == 0 and "health: ok" in capsys.readouterr().out
+    monkeypatch.setattr(health, "run", lambda: [("k", "disk is 95% full")])
+    assert health.main(args) == 1 and "disk is 95% full" in capsys.readouterr().out
