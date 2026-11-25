@@ -33,10 +33,8 @@ def cmd_certs_refresh(_args) -> int:
     """Export the Windows trusted roots (incl. Norton's) to a PEM for tools and containers."""
     pem = config.avk_home() / "certs" / "host-roots.pem"
     pem.parent.mkdir(parents=True, exist_ok=True)
-    certs = [ssl.DER_cert_to_PEM_cert(c) for store in ("ROOT", "CA")
-             for c, enc, _ in ssl.enum_certificates(store) if enc == "x509_asn"]  # type: ignore[attr-defined]
-    pem.write_text("".join(dict.fromkeys(certs)), encoding="ascii")
-    print(f"ok    wrote {len(set(certs))} certificates to {pem}")
+    count = truststore.export_roots(pem)
+    print(f"ok    wrote {count} certificates to {pem}")
     store = pem.with_name("host-truststore.p12")
     imported, skipped = truststore.build(pem, store)
     print(f"ok    Java truststore {store} ({imported} certificates, {skipped} skipped)")

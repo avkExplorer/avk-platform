@@ -209,3 +209,29 @@ def test_deployer_uses_the_truststore_only_for_apps_that_ask_and_only_if_the_fil
     (tmp_path / "certs" / "host-truststore.p12").write_bytes(b"x")
     assert deployer.host_truststore({"host_truststore": True}) == config.avk_home() / "certs" / "host-truststore.p12"
     assert deployer.host_truststore({"host_truststore": "yes"}) is None            # only a real boolean opts in
+
+
+# --- drill findings: a new machine has no certs file, and the login database restores differently ----------------------------
+def test_a_missing_host_roots_file_is_created_before_docker_can_make_a_folder_of_it(tmp_path):
+    made = []
+
+    def export(pem):
+        pem.write_text("PEM", encoding="ascii")
+        made.append(pem)
+        return 1
+
+    assert truststore.ensure_host_roots(tmp_path / "certs", export=export) is None and made
+    assert truststore.ensure_host_roots(tmp_path / "certs", export=lambda p: 1 / 0) is None      # already there: not exported again
+
+
+def test_a_folder_that_docker_created_in_its_place_is_replaced(tmp_path):
+    (tmp_path / "host-roots.pem").mkdir()
+    assert truststore.ensure_host_roots(tmp_path, export=lambda p: (p.write_text("x"), 1)[1]) is None
+    assert (tmp_path / "host-roots.pem").is_file()
+
+
+def test_export_failure_gives_a_clear_message_not_a_crash(tmp_path):
+    def boom(pem):
+        raise OSError("no store")
+
+    assert "avk certs refresh" in truststore.ensure_host_roots(tmp_path, export=boom)

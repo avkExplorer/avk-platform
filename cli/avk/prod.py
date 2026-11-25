@@ -54,6 +54,11 @@ def prepare() -> str | None:
     from avk import auth
     from avk.deployer.traefik import VolumeRoutes
 
+    from avk import truststore
+
+    problem = truststore.ensure_host_roots(config.avk_home() / "certs")   # Keycloak's compose file mounts this file
+    if problem:
+        return problem
     if auth.prepare_stack("prod") != 0:                      # Keycloak image and secret files
         return "could not prepare Keycloak (see above)"
     routes = VolumeRoutes()

@@ -116,14 +116,22 @@ All bound to `127.0.0.1`. Platform: 4800 stg index, 4810 Keycloak (stg), 4811/48
 
 ## Cost register
 
-| Service | Free-tier limit that matters | Past the limit | Verified on |
-|---|---|---|---|
-| Domain | renewal yearly | site and email stop | |
-| Cloudflare | 1 rate-limiting rule; first-level subdomain TLS | paid add-ons | |
-| GitHub | free gates on public repos only | need paid plan | |
-| Cloudflare Email Routing | free; 200 rules and 200 destination addresses | n/a at this scale | 2026-11-24 |
-| Resend (outbound mail) | free: 3,000 mails/month, 100/day, 3 domains | Pro $20/month | 2026-11-24 |
-| (more rows added as each phase signs up for a service) | | | |
+Total cost today is the domain name only (see `BUDGET.md`). Free tiers change: re-verify a row before relying on it.
+
+| Service | Free-tier limit that matters | Current use | Past the limit | Verified on |
+|---|---|---|---|---|
+| Domain (registrar) | pay yearly | avkaiexplorer.com | site and email stop at expiry | **renewal date: owner to add here** |
+| Cloudflare (DNS, Tunnel, Pages) | 1 rate-limiting rule; first-level subdomain TLS; Pages free builds | 1 tunnel, a few DNS records, 1 rate rule | paid add-ons | 2026-11-24 |
+| Cloudflare Email Routing | free; 200 rules and 200 destination addresses | 9 aliases, 1 destination | n/a at this scale | 2026-11-24 |
+| Cloudflare R2 (off-site backups) | free storage allowance (check the dashboard) | about 1 MB per nightly snapshot, 6 months kept | pay-as-you-go cents per GB | 2026-11-25 (usage only) |
+| GitHub | free Actions and gates on public repos only | 2 public repos | private repos need a paid plan | 2026-11-24 |
+| Resend (outbound mail) | 3,000 mails/month, 100/day, 3 domains | a handful per week | Pro $20/month | 2026-11-24 |
+| Better Stack (uptime, heartbeats, status page) | 10 monitors, 10 heartbeats, 1 status page, 3-minute checks, email alerts; custom status domain **unconfirmed** | planned: 3 monitors, 3 heartbeats | paid plan | 2026-11-25 (public pages; not yet signed up) |
+| Sentry (error tracking) | Developer plan about 5,000 errors/month, 1 user (third-party sources) | not used (hook left unset) | paid plan | 2026-11-25 (not signed up) |
+| Cloudflare Workers (outage page) | 100,000 requests/day, 10 ms CPU on the free plan | not used (skipped: a Worker on every request could exceed it) | error 1027 until midnight UTC | 2026-11-25 (docs) |
+| Docker images, Keycloak, Grafana stack | open source, run on this PC | about 1.9 GB RAM for prod, 0.5 GB more when `avk obs up` runs | n/a | 2026-11-25 (measured) |
+
+**Reminders (calendar):** domain renewal (date above); DMARC tightening (RUNBOOK timeline); re-run `avk certs refresh` if Norton's certificate changes; review the compliance checklist (`docs/compliance-checklist.md`) before the first payment.
 
 ## Email
 
