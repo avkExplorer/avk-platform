@@ -5,7 +5,7 @@
   "description": "Deployment platform for avkaiexplorer.com: security-gated pipeline, local stg, tunnelled prod.",
   "kind": "service",
   "stage": "completed",
-  "progress": "Phases 0-6 accepted (Phase 6: legal pack, contact form, accessibility gate, docker-watch; owner tasks open: postal address, attorney review). Next: Phase 7 Alerts",
+  "progress": "Phases 0-6 accepted. Phase 7 built and proven (alerts, Better Stack, dashboards, drill); awaiting acceptance. Next: Phase 8 Onboarding",
   "stack": ["Python", "Docker Compose", "Terraform", "Cloudflare", "GitHub Actions"],
   "requires": ["python", "docker", "git"],
   "setup": [
