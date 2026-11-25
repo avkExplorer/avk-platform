@@ -286,6 +286,21 @@ def ensure_admin_otp_flow(kc: Keycloak) -> list[str]:
     return changes
 
 
+def ensure_master_frontend(kc: Keycloak, env: str) -> list[str]:
+    """Where the admin console is reachable differs from the public address (prod: 127.0.0.1:4910 vs auth.), and the console
+    needs the master realm's own endpoints (login, token, the 3rd-party-cookie iframe) at ONE address. The public address
+    blocks the master realm on purpose, so give the master realm the local address as its frontend URL.
+    MUST run last: tokens issued before the change carry the old issuer, so the admin API rejects them (HTTP 401)."""
+    if URLS[env] == ADMIN_URLS[env]:
+        return []
+    master = kc.realm("master")
+    attrs = master.get("attributes") or {}
+    if attrs.get("frontendUrl") == ADMIN_URLS[env]:
+        return []
+    kc.update_realm("master", {**master, "attributes": {**attrs, "frontendUrl": ADMIN_URLS[env]}})
+    return [f"master realm frontend URL is {ADMIN_URLS[env]} (console works locally)"]
+
+
 def apply_realm(kc: Keycloak, env: str, refresh_secrets: bool = False) -> list[str]:
     """Idempotent. Returns what changed; an empty list means the realm already matched the file."""
     desired = json.loads(REALM_FILE.read_text(encoding="utf-8"))
@@ -306,6 +321,7 @@ def apply_realm(kc: Keycloak, env: str, refresh_secrets: bool = False) -> list[s
     changes += ensure_delete_account(kc)
     changes += ensure_signup_password(kc)
     changes += ensure_admin_otp_flow(kc)
+    changes += ensure_master_frontend(kc, env)          # last: it invalidates this session's token
     return changes
 
 

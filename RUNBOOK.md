@@ -197,6 +197,10 @@ URLs: stg `http://127.0.0.1:4810` (Mailpit on :4811 shows the emails), prod `htt
 1. Open `http://127.0.0.1:4910/admin/master/console/`, user `avk-admin`, the password from `keycloak-admin.env`.
 2. Keycloak makes you enrol an authenticator app: scan the QR code, type the code. Save the recovery steps in the password manager.
 
+If the console says "Timeout when waiting for 3rd party check iframe message", the master realm's frontend URL is not the local
+address (the console asks the public host, which answers 404 on purpose). Run `avk auth apply --env prod`: it sets the master
+realm's frontend URL to `http://127.0.0.1:4910`. Always open the console at `http://127.0.0.1:4910`, never at the `auth.` name.
+
 ### Add an admin (a user who may open an app's `/admin`)
 Console > realm `avk` > Users > the person > Role mapping > Assign role > `admin`. At their next login they are forced to enrol OTP.
 

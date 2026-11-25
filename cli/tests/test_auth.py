@@ -83,6 +83,34 @@ def test_keycloak_database_sql_is_least_privilege():
     assert "GRANT CONNECT ON DATABASE keycloak TO keycloak" in sql
 
 
+# ---------------------------------------------------------------------------------------------- admin console address
+class FakeMasterKC:
+    def __init__(self, attributes=None):
+        self.master = {"realm": "master", "attributes": attributes or {}}
+        self.updates = []
+
+    def realm(self, name):
+        return self.master
+
+    def update_realm(self, name, rep):
+        self.updates.append(rep)
+        self.master = rep
+
+
+def test_master_realm_gets_the_local_console_address_on_prod_only_and_only_once():
+    kc = FakeMasterKC()
+    assert auth.ensure_master_frontend(kc, "prod") and kc.updates[-1]["attributes"]["frontendUrl"] == "http://127.0.0.1:4910"
+    assert auth.ensure_master_frontend(kc, "prod") == [] and len(kc.updates) == 1      # second run: nothing to do
+    assert auth.ensure_master_frontend(FakeMasterKC(), "stg") == []                    # stg public address = console address
+
+
+def test_master_frontend_runs_last_because_it_invalidates_the_session_token():
+    import inspect
+    src = inspect.getsource(auth.apply_realm)
+    assert src.index("ensure_master_frontend") > max(src.index(n) for n in
+                                                    ("ensure_roles", "ensure_delete_account", "ensure_admin_otp_flow"))
+
+
 # ---------------------------------------------------------------------------------------------- the public route
 def test_public_route_blocks_admin_paths_and_the_master_realm():
     text = auth.route_yaml("auth.avkaiexplorer.com")
