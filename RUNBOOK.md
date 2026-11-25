@@ -1,4 +1,4 @@
-﻿# Runbook
+# Runbook
 
 All commands are PowerShell from the repo root. Set `$avk = "$env:AVK_HOME\venv\Scripts\python.exe"` first.
 
