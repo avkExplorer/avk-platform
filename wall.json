@@ -5,7 +5,7 @@
   "description": "Deployment platform for avkaiexplorer.com: security-gated pipeline, local stg, tunnelled prod.",
   "kind": "service",
   "stage": "completed",
-  "progress": "Phases 0-4 accepted. Phase 5 in progress: Keycloak live (stg, prod), realm, theme, 9 browser tests pass; app starter next",
+  "progress": "Phases 0-4 accepted. Phase 5 built and hand-tested: Keycloak live (stg, prod), hello login released, 17 browser tests pass; awaiting acceptance (CI-stack Keycloak deferred)",
   "stack": ["Python", "Docker Compose", "Terraform", "Cloudflare", "GitHub Actions"],
   "requires": ["python", "docker", "git"],
   "setup": [

@@ -145,6 +145,12 @@ OTP, no OTP prompt for a normal user, account deletion.
 - The master-realm CLI user has no second factor; it is protected by the loopback-only admin port and a 64-character secret.
 - The Terms and Privacy links in the login footer point at pages that arrive in Phase 6.
 - Social login is off. Turnstile (bot check) is not enabled; the edge rate limit covers the login, registration and reset paths.
+- The CI stack has no Keycloak, so the pipeline does not run the real browser login tests; those run by hand against stg
+  (17 tests) and `hello`'s unit tests cover the role rules. Deferred by the owner on 2026-11-25; build it at the start of
+  Phase 8 (`avk new-app` needs a standard test setup anyway), or sooner if a second app or developer appears.
+- Norton's Mail Shield re-signs the mail TLS to Resend; prod Keycloak trusts the exported Windows roots as a workaround.
+- An account deleted directly in the Keycloak console is not announced to the apps.
+
 ## Infrastructure posture
 
 - No inbound ports; the tunnel is outbound only. Cloudflare terminates TLS (1.2 minimum, HTTPS enforced).
