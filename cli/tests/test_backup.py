@@ -185,3 +185,25 @@ def test_restore_from_unconfigured_offsite_is_refused(home, capsys):
     write_env(home)
     assert backup.restore("hello", "offsite", "scratch", None) == 1
     assert "not configured" in capsys.readouterr().out
+
+
+def test_restoring_the_login_database_reapplies_its_single_owner_role_not_app_roles(home, monkeypatch):
+    write_env(home)
+    monkeypatch.setattr(backup, "Restic", lambda s: FakeRestic())
+
+    def fake_restore_snapshot(restic, repo, target):
+        d = target / "db"
+        d.mkdir(parents=True)
+        (d / "keycloak.dump").write_text("x")
+        return d
+
+    monkeypatch.setattr(backup, "restore_snapshot", fake_restore_snapshot)
+    monkeypatch.setattr(backup, "dump_database", lambda *a, **k: None)
+    monkeypatch.setattr(backup, "sh", lambda *a, **k: type("R", (), {"returncode": 0, "stderr": ""})())
+    from avk import dbadmin
+
+    calls = []
+    monkeypatch.setattr(dbadmin, "create_keycloak", lambda env: calls.append(("keycloak", env)) or 0)
+    monkeypatch.setattr(dbadmin, "create", lambda app, env: calls.append(("app", app)) or 0)
+    assert backup.restore("keycloak", "local", "prod", "restore keycloak to prod") == 0
+    assert calls == [("keycloak", "prod")]

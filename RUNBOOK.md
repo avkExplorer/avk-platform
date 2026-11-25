@@ -78,16 +78,21 @@ It re-runs all four trust checks (the previous digest's approval attestation sti
 smoke-tests it and switches. It does **not** run down-migrations, so schema changes must stay backward-compatible with
 the previous image (an app rule in `specs/00-architecture.md`).
 
-## Rotate a secret
+## Rotate each secret
 
-```powershell
-& $avk -m avk secrets init hello --env prod --rotate runtime     # or migrator, or ro; values are never printed
-& $avk -m avk db create hello --env prod                         # puts the new password into the database role
-& $avk -m avk deploy hello --force                               # fresh containers pick up the new env file
-```
-Do the same with `--env stg` for stg. The tunnel token, Cloudflare token, mail key and GitHub token are rotated with
-their own scripts (`tools\set-*.ps1`); each section above says which. After rotating the backup password, make a new
-backup immediately and update the copy in your password manager first.
+| Secret | How | Then |
+|---|---|---|
+| Cloudflare API token | `tools\set-cloudflare-secrets.ps1` | `avk tf plan` works |
+| GitHub token | `tools\set-github-token.ps1` | `avk deploy-agent` prints `hello: nothing to deploy` |
+| Mail key (Resend) | `tools\set-mail-secret.ps1` (see Business email) | `avk mail test-send --to <you> --yes` |
+| An app's database passwords | `avk secrets init <app> --env prod --rotate runtime` (or `migrator`, `ro`), `avk db create <app> --env prod`, `avk deploy <app> --force` | the app answers `pong` |
+| Keycloak client secret | `avk auth client <app> --env prod` (see Login), then `avk deploy <app> --force` | log in once |
+| Keycloak admin passwords | change in the console, then update `secrets\prod\keycloak-admin.env` | `avk auth apply --env prod` |
+| Backup (restic) password | new password in the password manager first, then `restic key passwd` on both repositories, update `backup.env` | `avk backup run` then `verify` |
+| Heartbeat URLs | recreate the heartbeat in Better Stack, `tools\set-heartbeat-urls.ps1` | the next run pings |
+| Grafana admin | delete `secrets\prod\grafana.env`, `avk obs down`, `avk obs up` | log in |
+
+Do the same with `--env stg` for stg. A container reads its env file only when it is created, so after rotating, redeploy (`avk deploy <app> --force`).
 
 ## Backups
 
@@ -122,21 +127,56 @@ starts the live colour of each app; the deploy agent resumes within 5 minutes. P
 Check: `& $avk -m avk prod status` and `curl https://hello.avkaiexplorer.com/api/v1/ping`. Nothing runs while you are
 logged out, by design. If Docker Desktop did not start: open it once, then `& $avk -m avk prod up`.
 
-## Rebuild the platform on a new machine
+## The PC is dead: rebuild on a new machine
 
-1. Install git, Docker Desktop, Python 3.12+, restic, cosign, GitHub CLI; clone `avk-platform`; create `C:\avk` and the venv
-   (see the README quick start).
-2. Plug in the backup drive, or set up R2 access, and put the restic password (from your password manager) in
-   `secrets\platform\backup.env` as `RESTIC_PASSWORD=...` (plus the `R2_*` lines for off-site).
-3. Restore the files: `restic -r <repo> restore latest --tag avk --target C:\restore`, then copy `files\secrets`,
-   `files\tfstate`, `files\state` and `files\private` from the restored tree back into `C:\avk`.
-4. `avk prod up` creates the stack; then load the databases:
-   `docker cp ...dump avk-prod-pg-prod-1:/tmp/` and `pg_restore -U postgres -d <db> --create ...` (or use
-   `avk backup restore <app> --from local --to prod --confirm ...` once the roles exist: restore `globals.sql` first
-   with `psql -U postgres -f globals.sql`).
-5. Re-register the scheduled tasks (`tools\register-logon-task.ps1`, `tools\register-tasks.ps1`) and re-run
-   `tools\set-github-token.ps1` (the token is in the backup, but a fresh one is cleaner).
-6. `avk deploy-agent` and `avk prod status`; the tunnel token in `secrets\platform\tunnel.token` reconnects Cloudflare.
+**Goal:** prod back on a new Windows PC from the off-site backup. Expect 2 to 3 hours. **Data loss: up to 24 hours** (the nightly
+dump). Login accounts, hello's data, every secret and the platform state come back; logs, dashboards and Docker volumes do not
+(by design: they can be rebuilt).
+
+### Keep these OUTSIDE the PC (password manager), or none of the rest is possible
+1. The restic backup password (`RESTIC_PASSWORD` in `secrets\platform\backup.env`).
+2. The Cloudflare R2 backup access: account id, bucket name, access key id and secret (`R2_*` in the same file). *The drill found this was
+   not written down anywhere else: the backup holds its own keys, which are useless if the PC is gone.*
+3. Logins (with 2FA recovery codes) for GitHub, Cloudflare, Resend, Better Stack and the domain registrar.
+4. A printed or offline copy of this section.
+
+### Steps
+1. **Tools.** `winget install --source winget Git.Git Docker.DockerDesktop Python.Python.3.12 GitHub.cli Hashicorp.Terraform restic.restic sigstore.cosign EclipseAdoptium.Temurin.21.JDK`.
+   Put `restic.exe` and `cosign.exe` on the PATH (`C:\avk\bin`). In `%USERPROFILE%\.wslconfig` put `[wsl2]` and `memory=12GB`, then
+   `wsl --shutdown`. Start Docker Desktop once and turn on "Start Docker Desktop when you sign in".
+2. **Code and venv.** `git clone https://github.com/avkExplorer/avk-platform`, set the user variable `AVK_HOME=C:\avk`,
+   `python -m venv C:\avk\venv`, then `C:\avk\venv\Scripts\python.exe -m pip install -e cli[test]`. `$avk = "$env:AVK_HOME\venv\Scripts\python.exe"`.
+3. **Backup access.** Write `C:\avk\secrets\platform\backup.env` with `RESTIC_PASSWORD=...` and the four `R2_*` lines (or plug the backup drive in
+   and leave the R2 lines out).
+4. **Restore the files.** Local drive: `restic -r D:\development_backup\avk\restic restore latest --tag avk --target C:\restore`.
+   Off-site: set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RESTIC_PASSWORD`, then
+   `restic -r s3:https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com/<R2_BUCKET>/avk restore latest --tag avk --target C:\restore`.
+   Copy `files\secrets`, `files\tfstate`, `files\state` and `files\private` from under `C:\restore` into `C:\avk`.
+5. **Start prod.** `& $avk -m avk certs refresh` (builds the PC's certificate file and Java truststore), then `& $avk -m avk prod up`. This builds the
+   Keycloak image, starts the tunnel, Traefik, pg-prod and Keycloak (on an empty login database for now). The tunnel token from the backup
+   reconnects Cloudflare. (`prod up` also creates the certificate file itself if it is missing, so Docker never makes a folder of it.)
+6. **Restore the data.** The database roles come back by themselves (their passwords are in the restored secret files). For each database:
+   `& $avk -m avk db create hello --env prod`, then
+   `& $avk -m avk backup restore hello --from offsite --to prod --confirm "restore hello to prod"` and
+   `& $avk -m avk backup restore keycloak --from offsite --to prod --confirm "restore keycloak to prod"` (use `--from local` with the drive).
+   Then `docker restart avk-prod-keycloak-1` and `& $avk -m avk auth apply --env prod`.
+7. **Apps.** `& $avk -m avk deploy hello --force` redeploys the digest recorded in the restored `state\hello.json` (all trust checks run again).
+8. **Automation.** `powershell -ExecutionPolicy Bypass -File tools\register-logon-task.ps1`, then `tools\register-tasks.ps1`, then
+   `tools\set-github-token.ps1` (a fresh token is cleaner than the restored one).
+9. **Check.** `curl https://hello.avkaiexplorer.com/api/v1/ping`, log in at `https://hello.avkaiexplorer.com/profile`, `& $avk -m avk doctor`,
+   `& $avk -m avk backup run` then `backup verify`. Heartbeat URLs came back in `secrets\platform\heartbeats.env`, so the Better Stack monitors
+   and heartbeats keep working without changes. Norton's TLS scanning may not exist on the new PC; then `certs refresh` simply exports fewer roots.
+
+### What the drill found (2026-11-25, against the real snapshot)
+| Gap | Fix |
+|---|---|
+| The R2 keys and restic password lived only inside the backup | Write them in the password manager (list above) |
+| `avk backup restore keycloak` re-applied the wrong roles (it treated the login database like an app) | Fixed in code and tested: it re-applies the single `keycloak` owner role |
+| prod's Keycloak mounts `C:\avk\certs\host-roots.pem`; on a new PC Docker would create a folder with that name and the login service would not start | Fixed: `prod up` creates the file first |
+| Not in the backup, so redo by hand: Docker Desktop and WSL settings, scheduled tasks, Norton, `gh auth login`, installed tools | Steps 1 and 8 above |
+| Not in the backup by design: Grafana/Prometheus/Loki data, `logs\` (alert history), Traefik route volume, the Keycloak image | Rebuilt by `prod up`, `obs up` and the deployer |
+| The truststore code reached prod only through a side branch, so a later deploy ran without it | Found on 2026-11-25 and fixed: the live container is redeployed and the code is on `main` (PR below); `avk deploy` always uses the checked-out code, so keep the platform folder on `main` |
+| Restoring the login and hello databases | **Proven 2026-11-25:** both restored into throwaway containers from the local snapshot and from R2 (realms `avk` and `master`, users present) |
 
 ## Stg
 
@@ -251,4 +291,25 @@ Keycloak again and put the new login in `keycloak-admin.env`.
 - **One request:** every response has an `X-Request-Id` header (Cloudflare's ray id when the caller sent none). `python -m avk logs hello --request-id <id> --since 2h` prints every log line of that request; without `--request-id` it prints the recent lines (`--env stg` for the test copy).
 - **What reads what:** Prometheus scrapes each app's `:8081/actuator/prometheus` (private port, never published), Traefik `:8083`, and a read-only Postgres role `avk_monitor`; Alloy tails the container log files (no Docker socket) into Loki (14 days). Prometheus keeps 15 days.
 - **Broken?** `python -m avk obs status`; `docker logs avk-obs-<name>-1`.
+
+## Add a new app (by hand until Phase 8 automates it)
+1. New repo from the template (`app-template/`), add it to `platform.yaml` (`avk validate`), give it a `wall.json`.
+2. `avk secrets init <app> --env stg` and `--env prod`, `avk db create <app> --env stg|prod`.
+3. Login: `avk auth client <app> --env stg|prod`, copy `app-template/auth-starter/`. Policies: a `legal:` block, `avk legal render <app>`, `avk legal smtp <app> --env ...`, `app-template/legal-starter/`.
+4. `avk stg up <app> --build`; push; the release workflow builds and signs; approve `prod`; `avk deploy-agent`.
+5. Add a Better Stack monitor for its `/healthz` and, if it runs scheduled jobs, a heartbeat. `avk tf plan` for its DNS.
+
+## Move prod to a VPS
+Only three things change: where `avk prod up` runs, where the deployer runs, and the tunnel connector. (1) Make a small Linux VPS with Docker; clone the repo and
+restore `files\secrets|state|tfstate` as in "The PC is dead". (2) Run `avk prod up` and the deploy agent there (a cron job or systemd timer replaces the Windows
+tasks; paths use `AVK_HOME`). (3) Stop `cloudflared` on the PC and start it on the VPS with the same tunnel token (Cloudflare sends traffic to whichever connector
+is up). Backups, heartbeats and alerts work unchanged; drop the truststore setting if the VPS has no TLS-scanning antivirus.
+**Do this before the first real payment or stored customer record** (`docs/compliance-checklist.md`).
+
+## Incident response
+1. **Detect.** An alert email, a Better Stack down message, or a user report. `avk health`, `curl https://hello.avkaiexplorer.com/api/v1/ping`, `avk prod status`.
+2. **Contain.** Stop the damage first: `avk prod down` for a security problem; `avk rollback <app>` for a bad release; rotate any secret that may have leaked (table above).
+3. **Communicate.** Post on the Better Stack status page ("investigating", then updates). For personal-data exposure see `docs/compliance-checklist.md` and tell affected users promptly.
+4. **Fix.** `avk logs <app> --request-id <id>`, Grafana (`avk obs up`), then a normal pull-request release.
+5. **Write up.** A short note in `private/incidents/<date>.md`: what happened, timeline, cause, what changed so it cannot repeat.
 

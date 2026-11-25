@@ -374,7 +374,10 @@ def restore(app: str, source: str, to: str, confirm: str | None, settings: Setti
             return 1
         from avk import dbadmin
 
-        dbadmin.create(app, "prod")  # re-apply ownership and privileges after the restore
+        if app == "keycloak":
+            dbadmin.create_keycloak("prod")          # the login database has one owner role, not the three roles an app gets
+        else:
+            dbadmin.create(app, "prod")  # re-apply ownership and privileges after the restore
         print(f"ok    {app} restored into prod from the {source} snapshot")
         return 0
     except (BackupError, OSError, subprocess.TimeoutExpired) as exc:
