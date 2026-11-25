@@ -350,4 +350,4 @@ def test_the_static_dockerfile_names_its_user_so_the_dockerfile_scan_passes(tmp_
     template.render(tmp_path / "s", "demo", template.flags_for("static"), "avkExplorer", "avkaiexplorer.com", "main", 4890,
                     template_dir=template.template_dir_for("static"))
     lines = [l.strip() for l in (tmp_path / "s/Dockerfile").read_text(encoding="utf-8").splitlines()]
-    assert "USER 101:101" in lines and any(l.startswith("HEALTHCHECK") for l in lines) and lines[0].count("@sha256:") == 1   # Checkov CKV_DOCKER_3, _2 and a pinned base
+    assert "USER 101:101" in lines and any(l.startswith("HEALTHCHECK") for l in lines) and next(l for l in lines if l.startswith("FROM")).count("@sha256:") == 1   # Checkov CKV_DOCKER_3, _2 and a pinned base
