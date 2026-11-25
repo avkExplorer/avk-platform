@@ -351,5 +351,7 @@ def test_the_static_dockerfile_names_its_user_so_the_dockerfile_scan_passes(tmp_
                     template_dir=template.template_dir_for("static"))
     lines = [l.strip() for l in (tmp_path / "s/Dockerfile").read_text(encoding="utf-8").splitlines()]
     assert "USER 101:101" in lines and any(l.startswith("HEALTHCHECK") for l in lines)      # Checkov CKV_DOCKER_3 and _2
+    assert [l for l in lines if l.startswith("USER")][-1] == "USER 101:101"                    # the LAST user is the unprivileged one
+    assert "RUN apk upgrade --no-cache" in lines                                               # base-image fixes released since it was built
     assert next(l for l in lines if l.startswith("FROM")).count("@sha256:") == 1               # a pinned base image
 
