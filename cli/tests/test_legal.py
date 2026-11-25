@@ -250,3 +250,10 @@ def test_with_the_form_the_page_and_the_ack_mail_are_unchanged():
     r = legal.render("demo", FULL)
     assert "<form" in r.files["src/main/resources/static/legal/contact.html"]
     assert any("support_ack" in f for f in r.files)
+
+
+def test_a_footer_only_stylesheet_is_written_for_pages_with_their_own_design():
+    r = legal.render("demo", FULL)
+    css = r.files["src/main/resources/static/legal/footer.css"]
+    assert ".site-footer" in css and "#avk-consent" in css and "body" not in css.replace("padding", "")   # never styles body or global elements
+    assert "legal advice" in css.lower()

@@ -308,3 +308,39 @@ def test_static_apps_are_not_scraped_for_metrics_but_their_logs_are_tailed():
             {"id": "b" * 64, "name": "hello-green", "app": "hello", "service": ""}]
     metrics, logs_ = obs.build_targets(rows, frozenset({"clickers"}))
     assert [m["labels"]["app"] for m in metrics] == ["hello"] and [t["labels"]["app"] for t in logs_] == ["clickers", "hello"]
+
+
+def test_the_wall_step_judges_only_the_new_app_not_unrelated_folders(ctx, tmp_path):
+    (ctx.workspace / "wall").mkdir()
+    (ctx.workspace / "wall" / "wall.py").write_text("# fake", encoding="utf-8")
+
+    class WallShell(FakeShell):
+        def __init__(self, mine_ok=True, check_ok=True, **kw):
+            super().__init__(**kw)
+            self.mine_ok, self.check_ok = mine_ok, check_ok
+
+        def run(self, argv, cwd=None, timeout=1800):
+            if len(argv) > 1 and str(argv[1]).endswith("wall.py"):
+                self.calls.append("wall " + " ".join(argv[2:]))
+                if argv[2] == "validate":
+                    first = "ok        pingpong   pingpong" if self.mine_ok else "BAD       pingpong   pingpong"
+                    return newapp.Result(1, first + "\nMISSING   docs   no wall.json\n")      # exit 1 because of the unrelated folder
+                return newapp.Result(0 if self.check_ok else 1, "")
+            return super().run(argv, cwd, timeout)
+
+    ctx.shell = ctx.fake = WallShell(mine_ok=True)
+    assert newapp.run_new_app(newapp.Options(name="pingpong", app_type="api", yes=True), ctx)[0] == 0
+    assert "wall check pingpong" in ctx.fake.calls
+    ctx.shell = ctx.fake = WallShell(mine_ok=False)
+    with pytest.raises(newapp.NewAppError):
+        newapp.run_new_app(newapp.Options(name="pingpong", app_type="api", yes=True), ctx)
+
+
+def test_footer_markers_go_before_the_last_body_tag_not_one_inside_a_script_string(tmp_path):
+    page = tmp_path / "index.html"
+    page.write_text("<html><body><script>var s='<html><body>'+x+'</body></html>';</script><p>real</p></body></html>", encoding="utf-8")
+    assert newapp.ensure_footer_markers(page) is True
+    text = page.read_text(encoding="utf-8")
+    assert "'</body></html>';</script>" in text                       # the JavaScript string is untouched
+    assert text.index("avk-legal-footer:start") > text.index("<p>real</p>")
+    assert "/legal/footer.css" in text and "/legal/legal.css" not in text      # the scoped stylesheet: no global restyling of the page
