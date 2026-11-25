@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, logs, mail, obs, prod, secretgen, stg, tf, truststore
+from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, health, landing, legal, logs, mail, obs, prod, secretgen, stg, tf, truststore
 from avk.deployer import agent
 
 
@@ -99,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     lgp.add_argument("--request-id", help="only lines of this request (the X-Request-Id response header)")
     lgp.add_argument("--tail", type=int, default=200, help="at most this many lines per container (0 = all)")
     lgp.set_defaults(func=logs.main)
+    sub.add_parser("health", help="run the local health checks now (disks, backup drive, containers); emails problems like the 5-minute task").set_defaults(func=health.main)
     sub.add_parser("docker-watch", help="start Docker Desktop if it stopped (called by the deploy-agent task)").set_defaults(func=dockerwatch.main)
     sub.add_parser("deploy-agent", help="poll GitHub once and deploy any approved release").set_defaults(func=agent.cmd_agent)
     depp = sub.add_parser("deploy", help="deploy an app now (same trust checks and smoke tests as the agent)")

@@ -313,3 +313,10 @@ is up). Backups, heartbeats and alerts work unchanged; drop the truststore setti
 4. **Fix.** `avk logs <app> --request-id <id>`, Grafana (`avk obs up`), then a normal pull-request release.
 5. **Write up.** A short note in `private/incidents/<date>.md`: what happened, timeline, cause, what changed so it cannot repeat.
 
+## Alerts: what emails you, and how to test them
+- **Who sends:** `avk alert` and every deployer/backup alert email your mailbox through Resend. The same subject is sent at most once an hour. A "resolved" mail follows a health problem when it clears.
+- **Local checks (every 5 minutes, in the deploy-agent task):** `python -m avk health` runs them now. They cover disks above 80% and 90%, the backup drive, and prod containers that are stopped, unhealthy or restarting. A container that does not exist at all means prod was taken down on purpose (`avk prod down`) and is not an alert.
+- **Outside the PC (Better Stack):** 3 monitors (hello, login, apex) email when a site is down; 3 heartbeats (nightly backup, weekly verify, the deploy agent every 5 minutes with 25 minutes of grace) email when a job goes silent. The public status page is https://avkai-explorer.betteruptime.com/.
+- **Tests that were run (2026-11-25):** missed heartbeat (task paused, Better Stack emailed), unplugged backup drive (`backup run` exits 1 and emails, nothing is left in the staging folder; the health check emails once and then "resolved"), manual backup and verify (both heartbeats ping).
+- **Repeat a test:** unplug the drive and `python -m avk backup run`; or `Disable-ScheduledTask -TaskPath '\AVK' -TaskName 'AVK deploy agent'` (and Enable it again after the email).
+
