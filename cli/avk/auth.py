@@ -226,6 +226,81 @@ def apply_realm(kc: Keycloak, env: str, refresh_secrets: bool = False) -> list[s
     return changes
 
 
+# --------------------------------------------------------------------------------------------------- app clients
+INTERNAL_ISSUER = f"http://keycloak:8080/realms/{REALM}"     # containers on the stack's network call Keycloak here
+CALLBACK = "/login/oauth2/code/keycloak"                      # Spring Security's default redirect path for registration "keycloak"
+
+
+def app_entry(app: str) -> dict:
+    for a in config.load().apps:
+        if str(a.get("name")) == app:
+            return a
+    raise SystemExit(f"fail  '{app}' is not in platform.yaml")
+
+
+def client_urls(app: dict, env: str) -> tuple[list[str], list[str]]:
+    """(redirect URIs, post-logout redirect URIs): exact addresses, never wildcards."""
+    if env == "stg":
+        bases = [f"http://127.0.0.1:{app['stg_port']}"]
+    else:
+        bases = [f"https://{h}" for h in app.get("hosts") or []]
+    if not bases:
+        raise SystemExit(f"fail  {app.get('name')} has no address for {env} (stg_port / hosts in platform.yaml)")
+    return [b + CALLBACK for b in bases], [b + "/" for b in bases]
+
+
+def client_rep(name: str, secret: str, redirects: list[str], logouts: list[str]) -> dict:
+    """Confidential client, Authorization Code + PKCE (S256), no implicit and no password grant, exact redirect URIs."""
+    return {
+        "clientId": name, "name": name, "enabled": True, "protocol": "openid-connect",
+        "publicClient": False, "clientAuthenticatorType": "client-secret", "secret": secret,
+        "standardFlowEnabled": True, "implicitFlowEnabled": False, "directAccessGrantsEnabled": False,
+        "serviceAccountsEnabled": False, "fullScopeAllowed": False,
+        "redirectUris": redirects, "webOrigins": [], "rootUrl": "", "baseUrl": logouts[0],
+        "attributes": {"pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "##".join(logouts)},
+    }
+
+
+def ensure_client(kc: Keycloak, name: str, secret: str, redirects: list[str], logouts: list[str]) -> str:
+    """Create or update the client so Keycloak matches. Returns 'created', 'updated' or 'unchanged'."""
+    want = client_rep(name, secret, redirects, logouts)
+    found = kc.get(f"/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(name)}")
+    if not found:
+        kc.post(f"/admin/realms/{REALM}/clients", want)
+        return "created"
+    have = found[0]
+    stored = (kc.get(f"/admin/realms/{REALM}/clients/{have['id']}/client-secret") or {}).get("value")
+    keys = drift({k: v for k, v in want.items() if k != "secret"}, have)
+    if not keys and stored == secret:
+        return "unchanged"
+    kc.put(f"/admin/realms/{REALM}/clients/{have['id']}", {**have, **want})
+    return "updated"
+
+
+def client(app_name: str, env: str, rotate: bool = False) -> int:
+    app = app_entry(app_name)
+    redirects, logouts = client_urls(app, env)
+    ensure_dirs = secretgen.app_files(app_name, env)["runtime"]
+    existing = secretgen.parse_env(ensure_dirs.read_text(encoding="utf-8")) if ensure_dirs.is_file() else {}
+    if not existing:
+        print(f"fail  {ensure_dirs} missing: run `avk secrets init {app_name} --env {env}` first")
+        return 1
+    secret = secretgen.new_value(32) if rotate or not existing.get("OIDC_CLIENT_SECRET") else existing["OIDC_CLIENT_SECRET"]
+    try:
+        kc = connect(env)
+        result = ensure_client(kc, app_name, secret, redirects, logouts)
+    except KeycloakError as exc:
+        print(f"fail  {exc}")
+        return 1
+    values = {"OIDC_ISSUER": f"{URLS[env]}/realms/{REALM}", "OIDC_INTERNAL_ISSUER": INTERNAL_ISSUER,
+              "OIDC_CLIENT_ID": app_name, "OIDC_CLIENT_SECRET": secret}
+    merged = {**existing, **values}
+    if merged != existing:
+        secretgen.write_private(ensure_dirs, "".join(f"{k}={v}\n" for k, v in merged.items()))
+    print(f"ok    client {app_name} on {env}: {result}; secret in {ensure_dirs.relative_to(config.avk_home())} (not printed)")
+    return 0
+
+
 def apply(env: str, refresh_secrets: bool = False) -> int:
     try:
         kc = connect(env)
@@ -245,5 +320,7 @@ def main(args) -> int:
         return init(args.env)
     if action == "apply":
         return apply(args.env, args.refresh_secrets)
+    if action == "client":
+        return client(args.app, args.env, args.rotate)
     print(f"fail  unknown action {action}")
     return 1

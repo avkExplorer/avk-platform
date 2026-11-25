@@ -1,0 +1,76 @@
+/* AVK brand layer. Only the variables below need to change when the real brand arrives. */
+:root {
+    --avk-accent: #0f766e;          /* placeholder accent (teal): replace with the brand colour */
+    --avk-accent-dark: #115e59;     /* hover / pressed */
+    --avk-bg: #f3f6f5;
+    --avk-bg-dark: #0c1f1d;
+    --avk-logo-url: none;           /* e.g. url('../img/logo.svg') once a real logo exists */
+
+    --keycloak-bg-logo-url: none;
+    --keycloak-card-top-color: var(--avk-accent);
+    --pf-v5-global--primary-color--100: var(--avk-accent);
+    --pf-v5-global--primary-color--200: var(--avk-accent-dark);
+    --pf-v5-global--link--Color: var(--avk-accent);
+    --pf-v5-global--link--Color--hover: var(--avk-accent-dark);
+    --pf-v5-global--active-color--100: var(--avk-accent);
+}
+
+/* Background: plain, no Keycloak artwork. */
+.login-pf body {
+    background: var(--avk-bg);
+    background-image: none;
+}
+@media (prefers-color-scheme: dark) {
+    .login-pf body { background: var(--avk-bg-dark); }
+}
+
+/* Wordmark (realm displayNameHtml renders this markup). Text-only placeholder until a logo file exists. */
+.avk-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    margin: 0 auto;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: .01em;
+}
+.avk-brand::before {
+    content: "";
+    display: var(--avk-logo-display, none);
+    width: 2rem;
+    height: 2rem;
+    background: var(--avk-logo-url) no-repeat center / contain;
+}
+.avk-brand .avk-mark {
+    background: var(--avk-accent);
+    color: #fff;
+    padding: .1rem .5rem;
+    border-radius: .35rem;
+}
+
+/* Accessible focus ring on everything interactive. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--avk-accent);
+    outline-offset: 2px;
+}
+
+/* Footer (Terms, Privacy, Support). */
+.avk-footer {
+    margin-top: 1.5rem;
+    text-align: center;
+    font-size: .875rem;
+}
+.avk-footer a { text-decoration: underline; margin: 0 .5rem; }
+
+/* Phone width: let the card use the screen and keep tap targets comfortable. */
+@media (max-width: 36rem) {
+    .pf-v5-c-login__container { grid-template-columns: 1fr; }
+    .pf-v5-c-login__main { margin: 0 .5rem; }
+    .pf-v5-c-button { min-height: 2.75rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+}

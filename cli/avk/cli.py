@@ -130,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
     aapply.add_argument("--env", choices=["stg", "prod"], required=True)
     aapply.add_argument("--refresh-secrets", action="store_true", help="also re-send the SMTP password (after rotating the mail key)")
     aapply.set_defaults(func=auth.main)
+    aclient = authp.add_parser("client", help="create or update an app's login client and write its secret")
+    aclient.add_argument("app")
+    aclient.add_argument("--env", choices=["stg", "prod"], required=True)
+    aclient.add_argument("--rotate", action="store_true", help="issue a new client secret")
+    aclient.set_defaults(func=auth.main)
 
     seedp = sub.add_parser("seed", help="load synthetic data into stg (never prod)")
     seedp.add_argument("app")

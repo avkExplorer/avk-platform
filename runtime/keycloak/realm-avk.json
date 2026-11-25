@@ -1,6 +1,10 @@
 {
   "realm": "avk",
   "displayName": "AVK Explorer",
+  "displayNameHtml": "<div class=\"avk-brand\"><span class=\"avk-mark\">AVK</span><span>Explorer</span></div>",
+  "loginTheme": "avk",
+  "accountTheme": "avk",
+  "emailTheme": "avk",
   "enabled": true,
   "sslRequired": "external",
 
