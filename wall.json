@@ -4,8 +4,8 @@
   "name": "AVK App Platform",
   "description": "Deployment platform for avkaiexplorer.com: security-gated pipeline, local stg, tunnelled prod.",
   "kind": "service",
-  "stage": "in-progress",
-  "progress": "Phase 4 done, all 8 proofs passed; awaiting owner sign-off. Next: Phase 5 (login)",
+  "stage": "completed",
+  "progress": "Phases 0-4 accepted by owner 2026-11-24 (runtime, deployer, backups, 8 proofs). Next: Phase 5 (login)",
   "stack": ["Python", "Docker Compose", "Terraform", "Cloudflare", "GitHub Actions"],
   "requires": ["python", "docker", "git"],
   "setup": [
