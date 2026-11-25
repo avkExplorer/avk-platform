@@ -3,8 +3,9 @@
 A reusable deployment platform for apps on avkaiexplorer.com. Each app gets a local non-prod environment, a
 prod hostname, a security-gated GitHub Actions pipeline, a database, login, business email and legal pages.
 
-**Status:** Phases 0 and 1 built: the tunnel, `https://hello.avkaiexplorer.com`, and the apex and status
-placeholder pages (Cloudflare Pages) are live. Email is next. Phases: foundation (DNS and tunnel), email, pipeline, runtime, auth,
+**Status:** Phases 0 to 3 built: tunnel and placeholder pages, business email, and the security-gated pipeline
+(signed images, owner approval) proven on the pilot service [hello](https://github.com/avkExplorer/hello). The runtime
+(deployer, databases, backups) is next. Phases: foundation (DNS and tunnel), email, pipeline, runtime, auth,
 legal, observability, onboarding, AWS lab.
 
 ## How it is shaped
