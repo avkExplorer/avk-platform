@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, dbadmin, doctor, landing, mail, prod, secretgen, stg, tf
+from avk import __version__, backup, config, dbadmin, doctor, landing, mail, prod, secretgen, stg, tf
 from avk.deployer import agent
 
 
@@ -90,6 +90,16 @@ def build_parser() -> argparse.ArgumentParser:
     rbp = sub.add_parser("rollback", help="return an app to its previous digest (all trust checks run again)")
     rbp.add_argument("app")
     rbp.set_defaults(func=agent.cmd_rollback)
+
+    bkp = sub.add_parser("backup", help="encrypted backups (external drive + off-site) and restore tests").add_subparsers(dest="action", required=True)
+    bkp.add_parser("run", help="back up prod databases, secrets, tfstate and state").set_defaults(func=backup.main)
+    bkp.add_parser("verify", help="restic check, then restore into a throwaway Postgres and compare row counts").set_defaults(func=backup.main)
+    brs = bkp.add_parser("restore", help="restore one app's database from a backup")
+    brs.add_argument("app")
+    brs.add_argument("--from", dest="source", choices=["local", "offsite"], required=True)
+    brs.add_argument("--to", choices=["scratch", "prod"], required=True)
+    brs.add_argument("--confirm", help='typed confirmation for --to prod: "restore <app> to prod"')
+    brs.set_defaults(func=backup.main)
 
     landp = sub.add_parser("landing", help="apex/status placeholder pages on Cloudflare Pages").add_subparsers(dest="action", required=True)
     landp.add_parser("deploy").set_defaults(func=landing.main)
