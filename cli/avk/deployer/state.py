@@ -120,9 +120,15 @@ class Log:
 
 
 def alert(message: str, path: Path | None = None) -> None:
-    """Phase 4: a line in logs\\alerts.log and on screen. Phase 7 sends the same message by email."""
+    """A line in logs\\alerts.log and on screen, and (Phase 7) an email to the owner, at most one per subject per hour.
+    A call with an explicit `path` (tests) never sends email."""
+    send_email = path is None
     path = path or (config.avk_home() / "logs" / "alerts.log")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(f"{now_iso()} {message}\n")
     print(f"ALERT {message}")
+    if send_email:
+        from avk import alerts          # imported here: alerts needs mail, which needs config; keeps this module light
+
+        alerts.notify(message)

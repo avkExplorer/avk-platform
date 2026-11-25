@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, mail, prod, secretgen, stg, tf
+from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, mail, prod, secretgen, stg, tf
 from avk.deployer import agent
 
 
@@ -82,6 +82,12 @@ def build_parser() -> argparse.ArgumentParser:
     dcreate.add_argument("--env", choices=["stg", "prod"], required=True)
     dcreate.set_defaults(func=dbadmin.main)
 
+    alp = sub.add_parser("alert", help="email the owner (same subject at most once an hour unless --force)")
+    alp.add_argument("subject")
+    alp.add_argument("body", nargs="?", default="")
+    alp.add_argument("--key", help="repeat-limit key (default: the subject without numbers)")
+    alp.add_argument("--force", action="store_true", help="send even if the same alert went out within the hour")
+    alp.set_defaults(func=alerts.main)
     sub.add_parser("docker-watch", help="start Docker Desktop if it stopped (called by the deploy-agent task)").set_defaults(func=dockerwatch.main)
     sub.add_parser("deploy-agent", help="poll GitHub once and deploy any approved release").set_defaults(func=agent.cmd_agent)
     depp = sub.add_parser("deploy", help="deploy an app now (same trust checks and smoke tests as the agent)")

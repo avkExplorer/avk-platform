@@ -385,11 +385,19 @@ def restore(app: str, source: str, to: str, confirm: str | None, settings: Setti
 
 
 def main(args) -> int:
+    from avk import heartbeat                              # success pings the outside "dead man's switch" (a no-op until configured)
+
     try:
         if args.action == "run":
-            return run_backup()
+            code = run_backup()
+            if code == 0:
+                heartbeat.ping("backup-run")
+            return code
         if args.action == "verify":
-            return verify()
+            code = verify()
+            if code == 0:
+                heartbeat.ping("backup-verify")
+            return code
         return restore(args.app, args.source, args.to, args.confirm)
     except BackupError as exc:
         alert(f"{args.action.upper()} FAILED: {exc}")
