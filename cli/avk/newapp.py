@@ -390,16 +390,29 @@ def _terraform_plan(shell: Shell, report: Report) -> str:
     return f"{summary}" + (f" ({detail})" if detail else "")
 
 
+def _ensure_identity(shell: Shell, dest: Path) -> None:
+    """A new repository on this PC has no git identity (there is no global one): copy the platform repository's, locally."""
+    for key in ("user.name", "user.email"):
+        if shell.run(["git", "config", "--get", key], cwd=dest).out.strip():
+            continue
+        value = shell.run(["git", "config", "--get", key], cwd=config.REPO_ROOT).out.strip()
+        if not value:
+            raise NewAppError(f"git has no {key}: run `git config --global {key} <value>` once, then run this again")
+        _must(shell.run(["git", "config", key, value], cwd=dest), f"git config {key}")
+
+
 def _git(opts: Options, dest: Path, owner: str, report: Report, shell: Shell, has_repo: bool, ctx: Context) -> None:
     slug = f"{owner}/{opts.name}"
     fresh = not (dest / ".git").exists()
     if fresh:
         _must(shell.run(["git", "init", "-b", "main"], cwd=dest), "git init")
+    _ensure_identity(shell, dest)
     status = shell.run(["git", "status", "--porcelain"], cwd=dest).out.strip()
     if fresh:
         branch = "main"
     else:
-        branch = shell.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=dest).out.strip()
+        probe = shell.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=dest)
+        branch = probe.out.strip() if probe.code == 0 else "main"       # a repository with no commit yet (an earlier run stopped early)
         if status and branch == "main":
             _must(shell.run(["git", "checkout", "-b", ADOPT_BRANCH], cwd=dest), "git checkout")
             branch = ADOPT_BRANCH

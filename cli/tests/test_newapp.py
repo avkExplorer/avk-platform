@@ -33,7 +33,7 @@ class FakeShell:
     def __init__(self, repo_exists=False, tf_plan="Plan: 2 to add, 1 to change, 0 to destroy.\n  # cloudflare_dns_record.tunnel_host[\"x\"] will be created\n",
                  stg_up=False, git_dirty=True, branch="main"):
         self.calls, self.repo_exists, self.tf_plan, self.stg_up = [], repo_exists, tf_plan, stg_up
-        self.git_dirty, self.branch = git_dirty, branch
+        self.git_dirty, self.branch, self.identity = git_dirty, branch, False
 
     def run(self, argv, cwd=None, timeout=1800):
         self.calls.append(" ".join(str(a) for a in argv))
@@ -42,6 +42,8 @@ class FakeShell:
             (Path(cwd) / ".git").mkdir(exist_ok=True)                    # a repository now exists, as after the real command
         if head[:2] == ["gh", "repo"] and head[2] == "view":
             return newapp.Result(0 if self.repo_exists else 1)
+        if argv[:3] == ["git", "config", "--get"]:
+            return newapp.Result(0, "x\n" if cwd == config.REPO_ROOT or self.identity else "")
         if argv[:2] == ["git", "status"]:
             return newapp.Result(0, " M x\n" if self.git_dirty else "")
         if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
@@ -355,3 +357,12 @@ def test_the_static_dockerfile_names_its_user_so_the_dockerfile_scan_passes(tmp_
     assert "RUN apk upgrade --no-cache" in lines                                               # base-image fixes released since it was built
     assert next(l for l in lines if l.startswith("FROM")).count("@sha256:") == 1               # a pinned base image
 
+
+
+
+def test_a_new_repository_gets_the_platform_repos_git_identity_so_the_first_commit_works(ctx):
+    code, _ = newapp.run_new_app(newapp.Options(name="pingpong", app_type="api", yes=True), ctx)
+    assert code == 0
+    sets = [c for c in ctx.fake.calls if c.startswith("git config user.")]
+    assert sets == ["git config user.name x", "git config user.email x"]
+    assert ctx.fake.calls.index(sets[0]) < next(i for i, c in enumerate(ctx.fake.calls) if c.startswith("git commit"))
