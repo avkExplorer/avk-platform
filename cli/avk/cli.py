@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, logs, mail, obs, prod, secretgen, stg, tf
+from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, logs, mail, obs, prod, secretgen, stg, tf, truststore
 from avk.deployer import agent
 
 
@@ -37,6 +37,9 @@ def cmd_certs_refresh(_args) -> int:
              for c, enc, _ in ssl.enum_certificates(store) if enc == "x509_asn"]  # type: ignore[attr-defined]
     pem.write_text("".join(dict.fromkeys(certs)), encoding="ascii")
     print(f"ok    wrote {len(set(certs))} certificates to {pem}")
+    store = pem.with_name("host-truststore.p12")
+    imported, skipped = truststore.build(pem, store)
+    print(f"ok    Java truststore {store} ({imported} certificates, {skipped} skipped)")
     return 0
 
 
