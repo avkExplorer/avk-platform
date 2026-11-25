@@ -89,9 +89,10 @@ class Deployer:
             self.sleep(self.ready_interval)
 
     # -------------------------------------------------------------------------------------------------- deploy
-    def deploy(self, t: trust.Trigger, rollback: bool = False) -> Outcome:
+    def deploy(self, t: trust.Trigger, rollback: bool = False, force: bool = False) -> Outcome:
+        """`force` redeploys the digest that is already live (new containers pick up rotated secrets). All checks still run."""
         app = t.app
-        self.log("deploy_start", app=app, digest=t.digest, deployment=t.deployment_id, rollback=rollback)
+        self.log("deploy_start", app=app, digest=t.digest, deployment=t.deployment_id, rollback=rollback, force=force)
 
         verdict = self.trust_check(self.platform_raw, self.owner, t)
         if not verdict.ok:
@@ -100,7 +101,7 @@ class Deployer:
 
         state = self.states(app)
         data = state.load()
-        if (data.get("current") or {}).get("digest") == t.digest and data.get("live_color") and not rollback:
+        if (data.get("current") or {}).get("digest") == t.digest and data.get("live_color") and not rollback and not force:
             self.log("already_live", app=app, digest=t.digest)
             self.report(t, "success", "already live")
             if t.deployment_id is not None:

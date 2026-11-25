@@ -86,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     depp = sub.add_parser("deploy", help="deploy an app now (same trust checks and smoke tests as the agent)")
     depp.add_argument("app")
     depp.add_argument("--digest", help="deploy this exact digest (still must be signed and approved)")
+    depp.add_argument("--force", action="store_true", help="redeploy the live digest into fresh containers (after rotating a secret)")
     depp.set_defaults(func=agent.cmd_deploy)
     rbp = sub.add_parser("rollback", help="return an app to its previous digest (all trust checks run again)")
     rbp.add_argument("app")

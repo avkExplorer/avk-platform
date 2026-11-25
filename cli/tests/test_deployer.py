@@ -329,6 +329,17 @@ def test_already_live_digest_is_not_redeployed(tmp_path):
     assert out.ok and out.step == "already-live" and len(e.docker.calls) == n
 
 
+def test_force_redeploys_the_live_digest_into_the_other_colour(tmp_path):
+    e = Env(tmp_path)
+    e.deployer.deploy(trigger())
+    e.docker.calls.clear()
+    out = e.deployer.deploy(trigger(deployment_id=None), force=True)
+    assert out.ok and out.step == "success"
+    assert ("start", "hello-green", "hello.env") in e.docker.calls         # fresh containers read the rotated secret file
+    assert len(e.trust_calls) == 2                                         # trust checks still ran both times
+    assert e.state()["live_color"] == "green"
+
+
 def test_rollback_skips_migrations_and_returns_to_previous(tmp_path):
     e = Env(tmp_path)
     e.deployer.deploy(trigger())

@@ -5,7 +5,7 @@
   "description": "Deployment platform for avkaiexplorer.com: security-gated pipeline, local stg, tunnelled prod.",
   "kind": "service",
   "stage": "in-progress",
-  "progress": "Phases 0-3 done: tunnel, email, signed+approved pipeline proven; Phase 4 (runtime) next",
+  "progress": "Phase 4 in progress: stg, deployer, backups built; waiting on token, first release and R2",
   "stack": ["Python", "Docker Compose", "Terraform", "Cloudflare", "GitHub Actions"],
   "requires": ["python", "docker", "git"],
   "setup": [
@@ -13,8 +13,10 @@
   ],
   "launch": {"cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "stg", "up"], "timeout": 120},
   "stop": {"cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "stg", "down"], "timeout": 120},
+  "open": "http://127.0.0.1:4800/",
+  "status": {"port": 4800},
   "docs": "README.md",
-  "notes": "Needs AVK_HOME (C:\\avk) with its venv; see README. The stg stack and its index page on 4800 arrive in Phase 4.",
+  "notes": "Needs AVK_HOME (C:\\avk) with its venv; see README. Launch starts the stg stack (pg-stg, Mailpit, index on 4800) and the apps on their stg ports; prod is started at logon and by avk prod up.",
   "checks": [
     {"name": "Doctor", "cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "doctor"], "timeout": 180},
     {"name": "platform.yaml", "cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "validate"], "timeout": 60},

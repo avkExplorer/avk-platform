@@ -30,6 +30,14 @@ def urllib_http(method: str, url: str, headers: dict, data: bytes | None) -> tup
         return exc.code, exc.read()
 
 
+def token_available() -> bool:
+    try:
+        load_token()
+        return True
+    except SystemExit:
+        return False
+
+
 def load_token() -> str:
     path = config.avk_home() / "secrets" / "platform" / "github.env"
     if not path.is_file():

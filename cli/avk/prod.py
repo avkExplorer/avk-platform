@@ -34,6 +34,24 @@ def test_route_yaml(hosts: list[str]) -> str:
     return "\n".join(lines)
 
 
+def live_apps() -> dict[str, str]:
+    """App name -> live colour, from the deployer's state files."""
+    from avk.deployer.state import AppState
+
+    out = {}
+    for a in config.load().apps:
+        color = AppState(str(a.get("name"))).load().get("live_color")
+        if color:
+            out[str(a.get("name"))] = color
+    return out
+
+
+def start_live_colours() -> None:
+    """After a reboot Docker restarts containers itself (restart: unless-stopped); this covers any that were stopped."""
+    for app, color in live_apps().items():
+        subprocess.run(["docker", "start", f"{app}-{color}"], capture_output=True, text=True)
+
+
 def prepare() -> str | None:
     """Write the Traefik route file; return an error message if a prerequisite is missing."""
     token = config.avk_home() / "secrets" / "platform" / "tunnel.token"
@@ -42,7 +60,10 @@ def prepare() -> str | None:
     from avk import secretgen
 
     secretgen.ensure_platform(("prod",))  # the database password file the compose file mounts
-    hosts = sorted(h for a in config.load().apps if a.get("status", "stg") != "retired" for h in a.get("hosts") or [])
+    live = live_apps()
+    # An app whose real container is live is routed by the deployer; only the rest still get the placeholder page.
+    hosts = sorted(h for a in config.load().apps if a.get("status", "stg") != "retired" and str(a.get("name")) not in live
+                   for h in a.get("hosts") or [])
     routes = config.avk_home() / "state" / "traefik"
     routes.mkdir(parents=True, exist_ok=True)
     (routes / "phase1-test.yml").write_text(test_route_yaml(hosts), encoding="utf-8")
@@ -68,6 +89,8 @@ def main(args) -> int:
         code = compose(["up", "-d", "--wait", "--wait-timeout", "120"]).returncode
         if code != 0:
             compose(["ps"])
+        else:
+            start_live_colours()
         return code
     if action == "down":
         return compose(["down"]).returncode

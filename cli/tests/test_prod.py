@@ -28,6 +28,18 @@ def test_prepare_writes_routes(tmp_path, monkeypatch):
     assert "hello.avkaiexplorer.com" in route
 
 
+def test_placeholder_route_skips_apps_that_are_live(tmp_path, monkeypatch):
+    monkeypatch.setenv("AVK_HOME", str(tmp_path))
+    token = tmp_path / "secrets" / "platform" / "tunnel.token"
+    token.parent.mkdir(parents=True)
+    token.write_text("x")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "hello.json").write_text('{"live_color": "blue"}', encoding="utf-8")
+    assert prod.prepare() is None
+    route = (tmp_path / "state" / "traefik" / "phase1-test.yml").read_text(encoding="utf-8")
+    assert "hello.avkaiexplorer.com" not in route          # the deployer's own route serves it now
+
+
 def test_status_rows_parses_compose_json():
     out = "\n".join(json.dumps(c) for c in [{"Service": "traefik", "Health": "healthy"},
                                             {"Service": "whoami", "Health": "", "State": "running"}])

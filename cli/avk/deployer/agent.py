@@ -80,8 +80,11 @@ def poll_app(d: Deployer, gh: github.GitHub, app: dict) -> str:
     return f"{name}: {'ok' if outcome.ok else 'FAILED at ' + outcome.step}"
 
 
-def run_once(only: str | None = None) -> int:
+def run_once(only: str | None = None, quiet_without_token: bool = False) -> int:
     platform = config.load()
+    if quiet_without_token and not github.token_available():
+        print("deployer: no GitHub token configured yet (tools\\set-github-token.ps1); nothing to do")
+        return 0
     gh = github.GitHub(github.load_token())
     d = build(gh, platform)
     with Lock() as lock:
@@ -103,7 +106,7 @@ def run_once(only: str | None = None) -> int:
 
 
 def cmd_agent(args) -> int:
-    return run_once()
+    return run_once(quiet_without_token=True)   # the scheduled task must not fail every 5 minutes before setup
 
 
 def cmd_deploy(args) -> int:
@@ -112,6 +115,13 @@ def cmd_deploy(args) -> int:
     if app is None:
         print(f"fail  '{args.app}' is not in platform.yaml")
         return 1
+    if args.force and not args.digest:
+        # redeploy whatever is live now (for example after rotating a secret)
+        current = AppState(args.app).load().get("current")
+        if not current:
+            print(f"fail  {args.app} is not deployed yet")
+            return 1
+        args.digest, args.sha = current["digest"], current.get("sha")
     if not args.digest:
         return run_once(only=args.app)
     gh = github.GitHub(github.load_token())
@@ -121,8 +131,8 @@ def cmd_deploy(args) -> int:
             print("another deployer run is in progress")
             return 1
         t = trust.Trigger(app=args.app, image=trust.expected_image(platform.github_owner, args.app), digest=args.digest,
-                          sha=None, deployment_id=None, source="manual")
-        out = d.deploy(t)
+                          sha=getattr(args, "sha", None), deployment_id=None, source="manual")
+        out = d.deploy(t, force=args.force)
         print("ok    deployed" if out.ok else f"REFUSED at {out.step}: {out.reason}")
         return 0 if out.ok else 1
 
