@@ -360,18 +360,43 @@ def client_rep(name: str, secret: str, redirects: list[str], logouts: list[str])
     }
 
 
+ROLES_MAPPER = {
+    "name": "realm roles in the ID token", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper",
+    "config": {"claim.name": "realm_access.roles", "jsonType.label": "String", "multivalued": "true",
+               "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"},
+}
+
+
+def ensure_client_roles(kc: Keycloak, client_uuid: str) -> list[str]:
+    """The client may not see every role (fullScopeAllowed is off): allow just `user` and `admin`, and put the realm roles
+    into the ID token and user-info, where the app's role mapping reads them."""
+    changes = []
+    base = f"/admin/realms/{REALM}/clients/{client_uuid}"
+    allowed = {r["name"] for r in kc.get(f"{base}/scope-mappings/realm") or []}
+    missing = [kc.get(f"/admin/realms/{REALM}/roles/{r}") for r in ("user", "admin") if r not in allowed]
+    if missing:
+        kc.post(f"{base}/scope-mappings/realm", missing)
+        changes.append("role scope")
+    if ROLES_MAPPER["name"] not in {m["name"] for m in kc.get(f"{base}/protocol-mappers/models") or []}:
+        kc.post(f"{base}/protocol-mappers/models", ROLES_MAPPER)
+        changes.append("roles mapper")
+    return changes
+
+
 def ensure_client(kc: Keycloak, name: str, secret: str, redirects: list[str], logouts: list[str]) -> str:
     """Create or update the client so Keycloak matches. Returns 'created', 'updated' or 'unchanged'."""
     want = client_rep(name, secret, redirects, logouts)
     found = kc.get(f"/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(name)}")
     if not found:
         kc.post(f"/admin/realms/{REALM}/clients", want)
+        ensure_client_roles(kc, kc.get(f"/admin/realms/{REALM}/clients?clientId={urllib.parse.quote(name)}")[0]["id"])
         return "created"
     have = found[0]
     stored = (kc.get(f"/admin/realms/{REALM}/clients/{have['id']}/client-secret") or {}).get("value")
     keys = drift({k: v for k, v in want.items() if k != "secret"}, have)
+    roles_changed = ensure_client_roles(kc, have["id"])
     if not keys and stored == secret:
-        return "unchanged"
+        return "updated" if roles_changed else "unchanged"
     kc.put(f"/admin/realms/{REALM}/clients/{have['id']}", {**have, **want})
     return "updated"
 
@@ -393,6 +418,8 @@ def client(app_name: str, env: str, rotate: bool = False) -> int:
         return 1
     values = {"OIDC_ISSUER": f"{URLS[env]}/realms/{REALM}", "OIDC_INTERNAL_ISSUER": INTERNAL_ISSUER,
               "OIDC_CLIENT_ID": app_name, "OIDC_CLIENT_SECRET": secret}
+    if env == "stg":
+        values["COOKIE_SECURE"] = "false"       # stg runs on plain http://127.0.0.1; prod keeps the Secure cookie
     merged = {**existing, **values}
     if merged != existing:
         secretgen.write_private(ensure_dirs, "".join(f"{k}={v}\n" for k, v in merged.items()))
@@ -423,6 +450,7 @@ def run_tests(env: str) -> int:
         return 1
     admin = admin_env(env)
     node_env = {**os.environ, "KC_URL": URLS[env], "MAILPIT_URL": "http://127.0.0.1:4811",
+                "HELLO_URL": f"http://127.0.0.1:{app_entry('hello')['stg_port']}",
                 "KC_ADMIN_USER": admin["AVK_CLI_USERNAME"], "KC_ADMIN_PASS": admin["AVK_CLI_PASSWORD"]}
     if not (E2E_DIR / "node_modules").is_dir():
         if subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=E2E_DIR, shell=True, env=node_env).returncode != 0:
