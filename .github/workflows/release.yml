@@ -175,9 +175,13 @@ jobs:
           echo "::add-mask::$POSTGRES_PASSWORD"
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$GITHUB_ENV"
           echo "APP_IMAGE=$APP_IMAGE" >> "$GITHUB_ENV"
-          docker compose -f ci/compose.ci.yaml up -d --wait --wait-timeout 120 db
-          docker compose -f ci/compose.ci.yaml run --rm migrate
-          docker compose -f ci/compose.ci.yaml up -d --wait --wait-timeout 180 app mailpit
+          # The ci stack is the app's own ci/compose.ci.yaml. An app with a database has `db` and `migrate`; a static site or an app
+          # without a database has only `app` (and maybe `mailpit`): start what the file defines.
+          has() { docker compose -f ci/compose.ci.yaml config --services | grep -qx "$1"; }
+          if has db; then docker compose -f ci/compose.ci.yaml up -d --wait --wait-timeout 120 db; fi
+          if has migrate; then docker compose -f ci/compose.ci.yaml run --rm migrate; fi
+          services=app; if has mailpit; then services="app mailpit"; fi
+          docker compose -f ci/compose.ci.yaml up -d --wait --wait-timeout 180 $services
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
