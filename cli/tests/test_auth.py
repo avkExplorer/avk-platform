@@ -118,7 +118,7 @@ def test_public_route_blocks_admin_paths_and_the_master_realm():
         assert f"PathPrefix(`{path}`)" in text
     blocked = text.split("keycloak-blocked:", 1)[1].split("middlewares:", 2)[0]
     assert "priority: 2000" in blocked and "keycloak-hide" in text    # beats the normal route (1000) and rewrites to a 404
-    assert "stsSeconds: 31536000" in text and "frameDeny: true" in text
+    assert "stsSeconds: 31536000" in text and "customFrameOptionsValue: SAMEORIGIN" in text and "frameDeny" not in text
 
 
 def test_prod_keycloak_service_publishes_only_the_loopback_admin_port():

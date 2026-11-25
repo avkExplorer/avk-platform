@@ -113,6 +113,10 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_LOG_CONSOLE_OUTPUT: json
       JAVA_OPTS_KC_HEAP: -XX:InitialRAMPercentage=40 -XX:MaxRAMPercentage=70
+      # Norton's Mail Shield re-signs the SMTP TLS to Resend; trust the exported Windows roots (`avk certs refresh`) so mail works.
+      KC_TRUSTSTORE_PATHS: /certs/host-roots.pem
+    volumes:
+      - ${AVK_HOME_SLASH}/certs/host-roots.pem:/certs/host-roots.pem:ro
     ports:
       - "127.0.0.1:4910:8080"
     tmpfs:

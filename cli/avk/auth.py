@@ -83,7 +83,8 @@ def route_yaml(host: str) -> str:
         "        stsSeconds: 31536000",
         "        stsIncludeSubdomains: true",
         "        contentTypeNosniff: true",
-        "        frameDeny: true",
+        # SAMEORIGIN, not DENY: Keycloak's own pages use same-origin iframes (login status, account console).
+        "        customFrameOptionsValue: SAMEORIGIN",
         "        referrerPolicy: strict-origin-when-cross-origin",
         "  services:",
         "    keycloak:",
