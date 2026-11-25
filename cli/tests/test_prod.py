@@ -18,26 +18,42 @@ def test_prepare_requires_token(tmp_path, monkeypatch):
     assert "tunnel.token" in prod.prepare()
 
 
+class FakeRoutes:
+    """Stands in for the Docker-volume route writer: tests must never reach Docker."""
+    written: dict = {}
+
+    def __init__(self, *a, **k):
+        pass
+
+    def ensure_volume(self):
+        pass
+
+    def write(self, name, text):
+        FakeRoutes.written[name] = text
+
+
 def test_prepare_writes_routes(tmp_path, monkeypatch):
     monkeypatch.setenv("AVK_HOME", str(tmp_path))
+    monkeypatch.setattr("avk.deployer.traefik.VolumeRoutes", FakeRoutes)
+    FakeRoutes.written = {}
     token = tmp_path / "secrets" / "platform" / "tunnel.token"
     token.parent.mkdir(parents=True)
     token.write_text("x")
     assert prod.prepare() is None
-    route = (tmp_path / "state" / "traefik" / "phase1-test.yml").read_text(encoding="utf-8")
-    assert "hello.avkaiexplorer.com" in route
+    assert "hello.avkaiexplorer.com" in FakeRoutes.written["phase1-test"]
 
 
 def test_placeholder_route_skips_apps_that_are_live(tmp_path, monkeypatch):
     monkeypatch.setenv("AVK_HOME", str(tmp_path))
+    monkeypatch.setattr("avk.deployer.traefik.VolumeRoutes", FakeRoutes)
+    FakeRoutes.written = {}
     token = tmp_path / "secrets" / "platform" / "tunnel.token"
     token.parent.mkdir(parents=True)
     token.write_text("x")
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "hello.json").write_text('{"live_color": "blue"}', encoding="utf-8")
     assert prod.prepare() is None
-    route = (tmp_path / "state" / "traefik" / "phase1-test.yml").read_text(encoding="utf-8")
-    assert "hello.avkaiexplorer.com" not in route          # the deployer's own route serves it now
+    assert "hello.avkaiexplorer.com" not in FakeRoutes.written["phase1-test"]   # the deployer's own route serves it now
 
 
 def test_status_rows_parses_compose_json():

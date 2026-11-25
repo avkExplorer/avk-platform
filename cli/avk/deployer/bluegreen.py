@@ -39,7 +39,7 @@ class Deployer:
                  host_http: Callable[[str, dict | None], tuple[int, str]] | None = None, secrets_root: Path | None = None,
                  clock: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
                  ready_timeout: float = 120, ready_interval: float = 3, grace: float = 600,
-                 public_attempts: int = 6, public_interval: float = 5):
+                 public_attempts: int = 6, public_interval: float = 5, switch_settle: float = 5.0):
         self.platform_raw, self.owner, self.docker, self.routes = platform_raw, owner, docker, routes
         self.states, self.trust_check, self.contract_loader, self.gh = states, trust_check, contract_loader, gh
         self.log = log or (lambda event, **f: None)
@@ -49,6 +49,9 @@ class Deployer:
         self.clock, self.sleep = clock, sleep
         self.ready_timeout, self.ready_interval, self.grace = ready_timeout, ready_interval, grace
         self.public_attempts, self.public_interval = public_attempts, public_interval
+        # Traefik reloads a changed route about 2 s after the write (measured). Wait longer than that before the post-switch
+        # smoke test, or the test could still be answered by the OLD colour and pass without testing the new route.
+        self.switch_settle = switch_settle
 
     # ------------------------------------------------------------------------------------------------- helpers
     def app_cfg(self, app: str) -> dict:
@@ -160,6 +163,7 @@ class Deployer:
         snapshot = self.routes.snapshot(app)
         self.routes.point(app, hosts, backend)
         self.log("switched", app=app, color=idle, backend=backend)
+        self.sleep(self.switch_settle)
 
         problem = self.post_switch(hosts, smoke)
         if problem:

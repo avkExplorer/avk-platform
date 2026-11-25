@@ -48,9 +48,11 @@ services:
       - --global.sendanonymoususage=false
     ports:
       - "127.0.0.1:4900:80"
+    # Routes live in a named volume (written by the deployer through a throwaway container). A Windows folder does not
+    # work here: Docker Desktop does not deliver file-change events from NTFS, so Traefik never saw route changes.
     volumes:
-      - type: bind
-        source: ${AVK_HOME_SLASH}/state/traefik
+      - type: volume
+        source: routes
         target: /dynamic
         read_only: true
     networks: [prod]
@@ -106,6 +108,8 @@ secrets:
 volumes:
   pgdata:
     name: avk-prod-pgdata
+  routes:
+    name: avk-prod-routes
 
 networks:
   prod:

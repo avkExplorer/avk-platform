@@ -20,6 +20,8 @@ def route_yaml(app: str, hosts: list[str], backend_url: str) -> str:
         "  routers:",
         f"    {app}:",
         f"      rule: {rule}",
+        # Must beat the Phase 1 placeholder route that may still claim the same host (default priority = rule length).
+        "      priority: 1000",
         "      entryPoints: [web]",
         f"      service: {app}",
         "  services:",
@@ -31,7 +33,65 @@ def route_yaml(app: str, hosts: list[str], backend_url: str) -> str:
     ])
 
 
+ROUTES_VOLUME = "avk-prod-routes"
+
+
+class VolumeRoutes:
+    """Routes kept in a Docker named volume that Traefik mounts read-only.
+
+    Why not a Windows folder: Docker Desktop does not deliver file-change events from NTFS into the Linux VM, so Traefik's
+    file watcher never saw a new or replaced route file (measured: not picked up in 40 s). Inside a named volume the
+    events work. Files are written by a throwaway container, with the same temp-file-then-atomic-rename as `Routes`.
+    """
+
+    def __init__(self, runner=None, image: str | None = None, volume: str = ROUTES_VOLUME):
+        from avk.deployer import dockerops
+
+        self.volume = volume
+        self.image = image or dockerops.CURL_IMAGE        # a small pinned alpine image with sh, cat, mv, rm
+        self._run = runner or dockerops._run
+
+    def _helper(self, script: str, stdin: str | None = None, readonly: bool = False):
+        argv = ["docker", "run", "--rm", "-i", "--network", "none", "--read-only", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--user", "0:0", "--memory", "32m",
+                "-v", f"{self.volume}:/r{':ro' if readonly else ''}", "--entrypoint", "sh", self.image, "-c", script]
+        return self._run(argv, stdin)
+
+    @staticmethod
+    def _safe(app: str) -> str:
+        if not app or not all(c.isalnum() or c in "-_" for c in app):
+            raise ValueError(f"unsafe route name {app!r}")
+        return app
+
+    def ensure_volume(self) -> None:
+        self._run(["docker", "volume", "create", self.volume], None)
+
+    def snapshot(self, app: str) -> str | None:
+        app = self._safe(app)
+        code, out, _ = self._helper(f"if [ -f /r/{app}.yml ]; then cat /r/{app}.yml; else exit 3; fi", readonly=True)
+        return out if code == 0 else None
+
+    def write(self, app: str, text: str) -> None:
+        app = self._safe(app)
+        self.ensure_volume()
+        code, _, err = self._helper(f"cat > /r/.{app}.yml.tmp && mv /r/.{app}.yml.tmp /r/{app}.yml", stdin=text)
+        if code != 0:
+            raise RuntimeError(f"could not write route {app}: {(err or '').strip()[-150:]}")
+
+    def point(self, app: str, hosts: list[str], backend_url: str) -> None:
+        self.write(app, route_yaml(app, hosts, backend_url))
+
+    def restore(self, app: str, snapshot: str | None) -> None:
+        app = self._safe(app)
+        if snapshot is None:
+            self._helper(f"rm -f /r/{app}.yml")
+        else:
+            self.write(app, snapshot)
+
+
 class Routes:
+    """File-based routes (kept for unit tests and for hosts where file events do work). Not used in production here."""
+
     def __init__(self, root: Path | None = None):
         self.root = root or routes_dir()
 

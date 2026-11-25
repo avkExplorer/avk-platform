@@ -15,7 +15,7 @@ from avk import config
 from avk.deployer import dockerops, github, trust
 from avk.deployer.bluegreen import Deployer
 from avk.deployer.state import AppState, Lock, Log, alert
-from avk.deployer.traefik import Routes
+from avk.deployer.traefik import VolumeRoutes
 
 
 def host_http(url: str, headers: dict | None = None) -> tuple[int, str]:
@@ -40,7 +40,7 @@ def build(gh: github.GitHub | None, platform=None) -> Deployer:
         repo = next(a["repo"] for a in platform.raw["apps"] if str(a.get("name")) == app)
         return yaml.safe_load(gh.file(repo, "avk.yaml", sha or "main"))
 
-    return Deployer(platform.raw, platform.github_owner, docker, Routes(), AppState, trust.check, contract,
+    return Deployer(platform.raw, platform.github_owner, docker, VolumeRoutes(), AppState, trust.check, contract,
                     gh=gh, log=Log(), alert=alert, host_http=host_http)
 
 

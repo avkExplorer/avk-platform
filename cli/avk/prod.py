@@ -64,9 +64,14 @@ def prepare() -> str | None:
     # An app whose real container is live is routed by the deployer; only the rest still get the placeholder page.
     hosts = sorted(h for a in config.load().apps if a.get("status", "stg") != "retired" and str(a.get("name")) not in live
                    for h in a.get("hosts") or [])
-    routes = config.avk_home() / "state" / "traefik"
-    routes.mkdir(parents=True, exist_ok=True)
-    (routes / "phase1-test.yml").write_text(test_route_yaml(hosts), encoding="utf-8")
+    from avk.deployer.traefik import VolumeRoutes
+
+    routes = VolumeRoutes()
+    routes.ensure_volume()
+    try:
+        routes.write("phase1-test", test_route_yaml(hosts))   # into the volume Traefik reads (not a Windows folder)
+    except RuntimeError as exc:
+        return str(exc)
     return None
 
 

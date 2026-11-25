@@ -5,7 +5,7 @@ import pytest
 
 from avk.deployer import bluegreen, github, trust
 from avk.deployer.state import AppState, Lock, Log
-from avk.deployer.traefik import Routes, route_yaml
+from avk.deployer.traefik import Routes, VolumeRoutes, route_yaml
 
 OWNER = "Me"
 DIGEST = "sha256:" + "a" * 64
@@ -240,6 +240,22 @@ def test_successful_first_deploy(tmp_path):
     assert e.statuses[0][2] == "in_progress" and e.statuses[-1][2] == "success"
 
 
+def test_post_switch_smoke_waits_for_traefik_to_reload(tmp_path):
+    """Traefik needs ~2 s to load a changed route; the first post-switch request must come after the settle wait."""
+    e = Env(tmp_path)
+    order = []
+    original_point = e.routes.point
+    e.routes.point = lambda *a, **k: (order.append("route"), original_point(*a, **k))[1]
+    original_sleep = e.deployer.sleep
+    e.deployer.sleep = lambda s: (order.append(("sleep", s)), original_sleep(s))[1]
+    e.deployer.host_http = lambda url, headers=None: (order.append("host_http"), (200, '{"message":"pong"}'))[1]
+    assert e.deployer.deploy(trigger()).ok
+    i_route = order.index("route")
+    i_first_http = order.index("host_http")
+    waited = sum(s for kind, s in (x for x in order[i_route:i_first_http] if isinstance(x, tuple)))
+    assert waited >= 4.0 and e.deployer.switch_settle >= 4.0
+
+
 def test_second_deploy_uses_the_other_colour_and_keeps_previous(tmp_path):
     e = Env(tmp_path)
     assert e.deployer.deploy(trigger()).ok
@@ -376,6 +392,7 @@ def test_secrets_never_appear_in_the_log_or_alerts(tmp_path):
 def test_route_yaml_and_atomic_write(tmp_path):
     text = route_yaml("hello", ["a.example.com", "b.example.com"], "http://hello-blue:8080")
     assert "Host(`a.example.com`) || Host(`b.example.com`)" in text and "http://hello-blue:8080" in text
+    assert "priority: 1000" in text      # the real app outranks the Phase 1 placeholder for the same host
     r = Routes(tmp_path)
     r.point("hello", ["a.example.com"], "http://hello-green:8080")
     assert [p.name for p in tmp_path.iterdir()] == ["hello.yml"]    # no temp file left behind
@@ -419,3 +436,63 @@ def test_github_client_sends_token_only_in_the_header():
     gh.deployments("Me/hello")
     assert seen[0][2]["Authorization"] == "Bearer ghp_SECRETTOKEN"
     assert "ghp_SECRETTOKEN" not in seen[0][1]
+
+
+# --------------------------------------------------------------------------------------- volume-based routes
+class FakeVolumeDocker:
+    """Records the docker commands VolumeRoutes issues and keeps a fake in-memory volume."""
+
+    def __init__(self):
+        self.files, self.calls = {}, []
+
+    def __call__(self, argv, stdin=None):
+        self.calls.append((argv, stdin))
+        if argv[:3] == ["docker", "volume", "create"]:
+            return 0, "", ""
+        script = argv[-1]
+        if script.startswith("if [ -f"):
+            name = script.split("/r/")[1].split(" ")[0]
+            return (0, self.files[name], "") if name in self.files else (3, "", "")
+        if script.startswith("cat >"):
+            name = script.split("&& mv ")[1].split(" ")[1].split("/r/")[1]
+            self.files[name] = stdin
+            return 0, "", ""
+        if script.startswith("rm -f"):
+            self.files.pop(script.split("/r/")[1], None)
+            return 0, "", ""
+        return 1, "", "unexpected"
+
+
+def test_volume_routes_roundtrip_and_restore():
+    fd = FakeVolumeDocker()
+    r = VolumeRoutes(runner=fd, image="img@sha256:x")
+    assert r.snapshot("hello") is None
+    r.point("hello", ["h.example.com"], "http://hello-blue:8080")
+    snap = r.snapshot("hello")
+    assert "hello-blue" in snap and "priority: 1000" in snap
+    r.point("hello", ["h.example.com"], "http://hello-green:8080")
+    r.restore("hello", snap)
+    assert "hello-blue" in r.snapshot("hello")
+    r.restore("hello", None)
+    assert r.snapshot("hello") is None
+
+
+def test_volume_helper_is_locked_down_and_content_goes_on_stdin():
+    fd = FakeVolumeDocker()
+    r = VolumeRoutes(runner=fd, image="img@sha256:x")
+    r.point("hello", ["h.example.com"], "http://hello-blue:8080")
+    argv, stdin = next((a, s) for a, s in fd.calls if a[:2] == ["docker", "run"] and s)
+    joined = " ".join(argv)
+    assert "--network none" in joined and "--read-only" in argv and "--cap-drop ALL" in joined
+    assert "no-new-privileges:true" in joined and "docker.sock" not in joined
+    assert "avk-prod-routes:/r" in joined and "Host(" not in joined          # the route text is stdin, never argv
+    assert "Host(`h.example.com`)" in stdin
+
+
+@pytest.mark.parametrize("bad", ["", "../x", "a b", "a;rm -rf /", "a$(id)"])
+def test_volume_route_names_are_validated(bad):
+    r = VolumeRoutes(runner=FakeVolumeDocker(), image="img")
+    with pytest.raises(ValueError):
+        r.snapshot(bad)
+    with pytest.raises(ValueError):
+        r.write(bad, "x")
