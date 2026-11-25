@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, mail, prod, secretgen, stg, tf
+from avk import __version__, alerts, auth, backup, config, dbadmin, doctor, dockerwatch, landing, legal, logs, mail, obs, prod, secretgen, stg, tf
 from avk.deployer import agent
 
 
@@ -88,6 +88,16 @@ def build_parser() -> argparse.ArgumentParser:
     alp.add_argument("--key", help="repeat-limit key (default: the subject without numbers)")
     alp.add_argument("--force", action="store_true", help="send even if the same alert went out within the hour")
     alp.set_defaults(func=alerts.main)
+    obsp = sub.add_parser("obs", help="dashboards, metrics and log search for prod, on demand (Grafana on 127.0.0.1:4950)").add_subparsers(dest="action", required=True)
+    for action in ("up", "down", "status", "refresh"):
+        obsp.add_parser(action).set_defaults(func=obs.main)
+    lgp = sub.add_parser("logs", help="an app's JSON log lines, optionally for one request id")
+    lgp.add_argument("app")
+    lgp.add_argument("--env", choices=["prod", "stg"], default="prod")
+    lgp.add_argument("--since", default="15m", help="30s, 15m, 2h, 1d (default 15m)")
+    lgp.add_argument("--request-id", help="only lines of this request (the X-Request-Id response header)")
+    lgp.add_argument("--tail", type=int, default=200, help="at most this many lines per container (0 = all)")
+    lgp.set_defaults(func=logs.main)
     sub.add_parser("docker-watch", help="start Docker Desktop if it stopped (called by the deploy-agent task)").set_defaults(func=dockerwatch.main)
     sub.add_parser("deploy-agent", help="poll GitHub once and deploy any approved release").set_defaults(func=agent.cmd_agent)
     depp = sub.add_parser("deploy", help="deploy an app now (same trust checks and smoke tests as the agent)")
