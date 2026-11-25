@@ -44,7 +44,11 @@ services:
       - --ping.entrypoint=ping
       - --providers.file.directory=/dynamic
       - --providers.file.watch=true
+      - --entrypoints.metrics.address=:8083
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=metrics
       - --accesslog=true
+      - --accesslog.fields.headers.names.Cf-Ray=keep
       - --accesslog.format=json
       - --log.format=json
       - --global.checknewversion=false

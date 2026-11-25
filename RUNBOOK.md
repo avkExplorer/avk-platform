@@ -244,3 +244,11 @@ Keycloak again and put the new login in `keycloak-admin.env`.
 - **After a recovery:** if a deploy was refused while Docker was down, the agent will not retry it; run `python -m avk deploy <app> --digest <sha256:...>` (same trust checks).
 - Phase 7 adds the email alert and the uptime monitor; until then read `alerts.log`.
 
+## Dashboards, metrics and logs (on demand)
+- **Start / stop:** `python -m avk obs up` (needs prod up), `python -m avk obs down` (data is kept). Alerts never depend on this stack. Idle cost: about 0.5 GB RAM.
+- **Grafana:** http://127.0.0.1:4950, user `admin`, password in `C:\avk\secrets\prod\grafana.env`. Dashboard "App overview" with an `App` selector: request rate, error rate, p50/p95 latency, database connections, JVM memory, Traefik and PostgreSQL panels and the app's logs.
+- **After a deploy (new colour):** `python -m avk obs refresh`; the stack picks the new container up within 30 seconds.
+- **One request:** every response has an `X-Request-Id` header (Cloudflare's ray id when the caller sent none). `python -m avk logs hello --request-id <id> --since 2h` prints every log line of that request; without `--request-id` it prints the recent lines (`--env stg` for the test copy).
+- **What reads what:** Prometheus scrapes each app's `:8081/actuator/prometheus` (private port, never published), Traefik `:8083`, and a read-only Postgres role `avk_monitor`; Alloy tails the container log files (no Docker socket) into Loki (14 days). Prometheus keeps 15 days.
+- **Broken?** `python -m avk obs status`; `docker logs avk-obs-<name>-1`.
+

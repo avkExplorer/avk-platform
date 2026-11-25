@@ -1,0 +1,26 @@
+# Prometheus for prod. Apps are listed in /targets/apps.json, which `avk obs up` writes from the live containers.
+# Prometheus polls that file every 30 s (the folder is a Windows folder, so file-change events are not delivered).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: apps
+    metrics_path: /actuator/prometheus
+    file_sd_configs:
+      - files: [/targets/apps.json]
+        refresh_interval: 30s
+
+  - job_name: traefik
+    static_configs:
+      - targets: ["traefik:8083"]
+        labels: {app: traefik}
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels: {app: postgres}
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

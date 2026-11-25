@@ -1,0 +1,23 @@
+// Log shipper: reads the Docker JSON log files of the containers listed in /targets/logs.json (written by `avk obs up`),
+// unwraps Docker's envelope, and sends the lines to Loki. The apps already log JSON (ECS) with request_id, so no parsing is
+// needed here; Grafana filters with `| json`. No Docker socket: only the log files, read-only.
+discovery.file "containers" {
+  files            = ["/targets/logs.json"]
+  refresh_interval = "30s"
+}
+
+loki.source.file "docker" {
+  targets    = discovery.file.containers.targets
+  forward_to = [loki.process.docker.receiver]
+}
+
+loki.process "docker" {
+  stage.docker {}
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -1,0 +1,103 @@
+# Observability stack (project avk-obs): metrics, logs and dashboards for prod. ON DEMAND: `avk obs up` / `avk obs down`.
+# Alerts never depend on this stack (they come from `avk health`, the heartbeats and the outside monitor).
+# Only Grafana is reachable, and only from this PC: 127.0.0.1:4950. Prometheus and Loki have no host port. Everything is pinned by
+# digest. The Docker socket is NOT mounted anywhere: the log shipper reads the container log files read-only instead, and
+# `avk obs up` writes the list of containers (state\obs\*.json) because the shipper cannot ask Docker.
+
+name: avk-obs
+
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  prometheus:
+    <<: *hardened
+    image: prom/prometheus@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 # latest on 2026-11-25
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.listen-address=:9090
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${AVK_HOME_SLASH}/state/obs:/targets:ro
+      - prom-data:/prometheus
+    networks: [obs, prod]
+    mem_limit: 512m
+    cpus: 1.0
+
+  loki:
+    <<: *hardened
+    image: grafana/loki@sha256:b43c257ccfc925d4a50b8717cac61a3b51df8c48d01847936057e5c4075a24a7 # 3.7.10
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    networks: [obs]
+    mem_limit: 512m
+    cpus: 1.0
+
+  alloy:
+    <<: *hardened
+    image: grafana/alloy@sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189 # 24.04 label
+    command: ["run", "--storage.path=/var/lib/alloy/data", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    user: "0:0"                    # the container log files are root-owned inside Docker's VM
+    cap_add: [DAC_OVERRIDE]        # root with every capability dropped cannot open the data volume the image pre-owns (uid 473)
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - ${AVK_HOME_SLASH}/state/obs:/targets:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - alloy-data:/var/lib/alloy/data
+    networks: [obs]
+    mem_limit: 384m
+    cpus: 0.5
+
+  postgres-exporter:
+    <<: *hardened
+    image: quay.io/prometheuscommunity/postgres-exporter@sha256:a88794758ad461c75f3825b51cde4bde730bdff04b3b24d00efe14217e41f615 # 0.21.1
+    env_file:
+      - ${AVK_HOME_SLASH}/secrets/prod/postgres-monitor.env      # DATA_SOURCE_NAME for the read-only avk_monitor role
+    networks: [prod, obs]
+    mem_limit: 128m
+    cpus: 0.25
+
+  grafana:
+    <<: *hardened
+    image: grafana/grafana@sha256:81556409ba48b2b922e0adb69a2511337d8ba7578f11962eefa6149a2d815101 # 13.3.2
+    env_file:
+      - ${AVK_HOME_SLASH}/secrets/prod/grafana.env               # GF_SECURITY_ADMIN_PASSWORD
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SERVER_ROOT_URL: http://127.0.0.1:4950/
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:4950:3000"
+    networks: [obs]
+    depends_on: [prometheus, loki]
+    mem_limit: 512m
+    cpus: 1.0
+
+networks:
+  obs: {}
+  prod:
+    external: true
+    name: avk-prod
+
+volumes:
+  prom-data: {}
+  loki-data: {}
+  alloy-data: {}
+  grafana-data: {}

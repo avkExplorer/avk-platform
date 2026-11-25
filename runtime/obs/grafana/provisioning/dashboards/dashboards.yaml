@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: avk
+    type: file
+    allowUiUpdates: false
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
