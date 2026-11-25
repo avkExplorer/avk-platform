@@ -106,7 +106,17 @@ def run_once(only: str | None = None, quiet_without_token: bool = False) -> int:
 
 
 def cmd_agent(args) -> int:
-    return run_once(quiet_without_token=True)   # the scheduled task must not fail every 5 minutes before setup
+    """The 5-minute task: deploy anything approved, then run the local health checks, then ping the heartbeat when all went well."""
+    from avk import health, heartbeat
+
+    code = run_once(quiet_without_token=True)   # the scheduled task must not fail every 5 minutes before setup
+    try:
+        health.run()                            # emails problems itself; a failure of the checker must not fail the deploy agent
+    except Exception as exc:  # noqa: BLE001
+        print(f"health: checker error {type(exc).__name__}: {str(exc)[:120]}")
+    if code == 0:
+        heartbeat.ping("deploy-agent")
+    return code
 
 
 def cmd_deploy(args) -> int:
