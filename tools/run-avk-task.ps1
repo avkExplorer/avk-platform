@@ -29,6 +29,12 @@ function Invoke-Timed([string]$File, [string[]]$Arguments, [int]$Seconds) {
 }
 
 $info = Invoke-Timed 'docker' @('info', '--format', '{{.ServerVersion}}') 30
+if ($info.Code -ne 0 -and $Name -eq 'deploy-agent') {
+    # The 5-minute task is also the watchdog: if Docker Desktop stopped, start it again (cooldown and hang rules are in dockerwatch.py).
+    $watch = Invoke-Timed (Join-Path $avkHome 'venv\Scripts\python.exe') @('-m', 'avk', 'docker-watch') 330
+    Write-Log "docker-watch exit=$($watch.Code) $(($watch.Out | Select-Object -Last 2) -join ' | ')"
+    $info = Invoke-Timed 'docker' @('info', '--format', '{{.ServerVersion}}') 30
+}
 if ($info.Code -ne 0) { Write-Log "docker not ready$(if ($info.TimedOut) { ' (engine hung)' }); skipped"; exit 0 }
 
 $python = Join-Path $avkHome 'venv\Scripts\python.exe'

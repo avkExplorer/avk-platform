@@ -238,3 +238,9 @@ Keycloak again and put the new login in `keycloak-admin.env`.
 - **Retire an API version:** call `SunsetHeaders.apply(...)` in the old version's handlers, announce the date, remove it after.
 - **Owner checklist:** `docs/compliance-checklist.md`.
 
+## Docker Desktop stopped (prod is down)
+- **Automatic:** the deploy-agent task (every 5 minutes) calls `avk docker-watch` when `docker info` does not answer. If Docker Desktop is not running it starts it (at most once per 10 minutes); if it is running but silent for 15 minutes it stops and starts it once. The containers restart by themselves. Every attempt is written to `C:\avk\logs\alerts.log` and `C:\avk\logs	ask-deploy-agent.log`.
+- **By hand:** `python -m avk docker-watch`, or start Docker Desktop yourself. Check `curl https://hello.avkaiexplorer.com/api/v1/ping`.
+- **After a recovery:** if a deploy was refused while Docker was down, the agent will not retry it; run `python -m avk deploy <app> --digest <sha256:...>` (same trust checks).
+- Phase 7 adds the email alert and the uptime monitor; until then read `alerts.log`.
+
