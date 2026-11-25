@@ -1,0 +1,16 @@
+package com.avkaiexplorer.__PKG__;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.Test;
+
+class HealthControllerTest {
+
+	@Test
+	void livenessAndReadinessAreUpWithoutADatabase() {
+		var controller = new HealthController();
+		assertThat(controller.live()).containsEntry("status", "up");
+		assertThat(controller.ready().getStatusCode().value()).isEqualTo(200);
+	}
+
+}

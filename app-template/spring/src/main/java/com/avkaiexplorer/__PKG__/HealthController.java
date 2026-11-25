@@ -1,0 +1,46 @@
+package com.avkaiexplorer.__PKG__;
+
+import java.util.Map;
+
+import org.springframework.http.ResponseEntity;
+// [[if db]]
+import org.springframework.jdbc.core.simple.JdbcClient;
+// [[end]]
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class HealthController {
+
+// [[if db]]
+	private final JdbcClient jdbc;
+
+	public HealthController(JdbcClient jdbc) {
+		this.jdbc = jdbc;
+	}
+
+// [[end]]
+	/** Liveness: the process is up. Never touches dependencies. */
+	@GetMapping("/healthz")
+	public Map<String, String> live() {
+		return Map.of("status", "up");
+	}
+
+	/** Readiness: dependencies are reachable (the database answers, when the app has one). */
+	@GetMapping("/readyz")
+	public ResponseEntity<Map<String, String>> ready() {
+// [[if db]]
+		try {
+			jdbc.sql("select 1").query(Integer.class).single();
+			return ResponseEntity.ok(Map.of("status", "ready"));
+		}
+		catch (RuntimeException ex) {
+			return ResponseEntity.status(503).body(Map.of("status", "database unavailable"));
+		}
+// [[end]]
+// [[if nodb]]
+		return ResponseEntity.ok(Map.of("status", "ready"));
+// [[end]]
+	}
+
+}

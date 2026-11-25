@@ -235,3 +235,18 @@ def test_export_failure_gives_a_clear_message_not_a_crash(tmp_path):
         raise OSError("no store")
 
     assert "avk certs refresh" in truststore.ensure_host_roots(tmp_path, export=boom)
+
+
+# --- sites without server code (the static template): the contact page is a mailto link, not a form -----------------------------
+def test_without_a_contact_form_there_is_no_form_and_no_acknowledgement_mail():
+    r = legal.render("demo", {**FULL, "contact_form": False, "accounts": False})
+    page = r.files["src/main/resources/static/legal/contact.html"]
+    assert "<form" not in page and "mailto:support@avkaiexplorer.com" in page and "ticket number" not in page
+    assert not [f for f in r.files if "support_ack" in f]
+    assert r.missing == []
+
+
+def test_with_the_form_the_page_and_the_ack_mail_are_unchanged():
+    r = legal.render("demo", FULL)
+    assert "<form" in r.files["src/main/resources/static/legal/contact.html"]
+    assert any("support_ack" in f for f in r.files)

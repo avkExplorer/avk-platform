@@ -14,7 +14,7 @@ PLATFORM_FILE = REPO_ROOT / "platform.yaml"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,29}$")
 RESERVED = frozenset({"www", "api", "auth", "mail", "status", "admin", "stg", "notify"})
-APP_TYPES = frozenset({"web", "api", "ecommerce", "service"})
+APP_TYPES = frozenset({"web", "api", "ecommerce", "service", "static"})
 APP_STATUSES = frozenset({"stg", "live", "retired"})
 STG_PORTS = range(4820, 4900)
 # Fixed platform ports (also listed in README.md). App stg ports come from STG_PORTS.

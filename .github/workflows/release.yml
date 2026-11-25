@@ -14,6 +14,10 @@ on:
       java-version:
         type: string
         default: "21"
+      stack:
+        description: "maven = build the jar first; static = the Dockerfile packages the files as they are."
+        type: string
+        default: "maven"
       expected-identity:
         description: "Exact certificate identity the build signature must carry, e.g. https://github.com/<owner>/avk-platform/.github/workflows/release.yml@refs/heads/main"
         type: string
@@ -52,6 +56,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Java
+        if: inputs.stack == 'maven'
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
@@ -59,6 +64,7 @@ jobs:
           cache: maven
 
       - name: Build and test the jar that will be shipped
+        if: inputs.stack == 'maven'
         run: ./mvnw -B -ntp verify
 
       - name: Build and push the image

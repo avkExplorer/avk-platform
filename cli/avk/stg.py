@@ -77,12 +77,18 @@ def contract(app: str) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def run_args(app: str, port: int, container_port: int, env_file: Path, image: str) -> list[str]:
-    return ["docker", "run", "-d", "--name", container_name(app), "--network", NETWORK, "--restart", "unless-stopped",
+def run_args(app: str, port: int, container_port: int, env_file: Path | None, image: str) -> list[str]:
+    argv = ["docker", "run", "-d", "--name", container_name(app), "--network", NETWORK, "--restart", "unless-stopped",
             "--read-only", "--tmpfs", "/tmp:rw,nosuid,size=64m", "--cap-drop", "ALL",
-            "--security-opt", "no-new-privileges:true", "--memory", "512m", "--cpus", "1", "--pids-limit", "256",
-            "--env-file", str(env_file), "--label", f"avk.app={app}", "--label", "avk.env=stg",
-            "-p", f"127.0.0.1:{port}:{container_port}", image]
+            "--security-opt", "no-new-privileges:true", "--memory", "512m", "--cpus", "1", "--pids-limit", "256"]
+    if env_file is not None:                           # none for an app without secrets (a static site)
+        argv += ["--env-file", str(env_file)]
+    return argv + ["--label", f"avk.app={app}", "--label", "avk.env=stg", "-p", f"127.0.0.1:{port}:{container_port}", image]
+
+
+def needs_secrets(cfg: dict) -> bool:
+    """An app that declares no migrations and no environment (a static site) has no database and no secrets."""
+    return bool(cfg.get("migrations")) or bool(cfg.get("env"))
 
 
 def ensure_infra(apps: list[dict]) -> int:
@@ -128,10 +134,12 @@ def up_app(app: dict, build: bool, digest: str | None) -> int:
     name, port = str(app["name"]), int(app["stg_port"])
     cfg = contract(name)
     files = secretgen.app_files(name, "stg")
-    if not files["runtime"].is_file():
-        secretgen.init_app(name, "stg")
-    if dbadmin.create(name, "stg") != 0:
-        return 1
+    secrets = needs_secrets(cfg)
+    if secrets:
+        if not files["runtime"].is_file():
+            secretgen.init_app(name, "stg")
+        if dbadmin.create(name, "stg") != 0:
+            return 1
     image = prepare_image(name, build, digest)
     sh(["docker", "rm", "-f", container_name(name)])
     migration = (cfg.get("migrations") or {}).get("command")
@@ -142,7 +150,7 @@ def up_app(app: dict, build: bool, digest: str | None) -> int:
         if mig.returncode != 0:
             print(f"fail  migration for {name}: {(mig.stdout + mig.stderr).strip()[-300:]}")
             return 1
-    started = sh(run_args(name, port, int(cfg["port"]), files["runtime"], image))
+    started = sh(run_args(name, port, int(cfg["port"]), files["runtime"] if secrets else None, image))
     if started.returncode != 0:
         print(f"fail  start {name}: {started.stderr.strip()[-300:]}")
         return 1

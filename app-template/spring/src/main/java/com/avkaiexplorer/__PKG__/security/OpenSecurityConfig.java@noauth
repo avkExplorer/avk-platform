@@ -1,0 +1,25 @@
+package com.avkaiexplorer.__PKG__.security;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * An app created with --no-auth: every path is public, there is no login, no session and therefore no CSRF to defend. The security
+ * headers (nosniff, frame options, cache control) still come from Spring Security. Add real access rules before this app holds
+ * anything private.
+ */
+@Configuration
+public class OpenSecurityConfig {
+
+	@Bean
+	@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+	SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+		http.authorizeHttpRequests(requests -> requests.anyRequest().permitAll());
+		http.csrf(csrf -> csrf.disable());
+		return http.build();
+	}
+
+}

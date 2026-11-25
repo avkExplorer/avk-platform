@@ -3,7 +3,10 @@
 # Outbound mail (Resend) is added separately once the owner has created the provider account.
 
 locals {
-  mail_aliases = ["hello", "support", "billing", "security", "privacy", "admin", "postmaster", "abuse", "dmarc"]
+  base_mail_aliases = ["hello", "support", "billing", "security", "privacy", "admin", "postmaster", "abuse", "dmarc"]
+  # Every app that is not retired gets its own support address (support-<app>@), so `avk new-app` needs no manual email setup.
+  app_mail_aliases = [for app in coalesce(local.platform.apps, []) : "support-${app.name}" if try(app.status, "stg") != "retired"]
+  mail_aliases     = concat(local.base_mail_aliases, local.app_mail_aliases)
 }
 
 variable "forward_to_mailbox" {

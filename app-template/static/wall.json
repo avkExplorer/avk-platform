@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "__APP__",
+  "name": "__APP__",
+  "description": "__APP__: a static site on the AVK platform (created with `avk new-app --type static`).",
+  "kind": "static",
+  "stage": "in-progress",
+  "progress": "Created with avk new-app; running on stg",
+  "stack": ["Static HTML/CSS/JS", "nginx", "Docker"],
+  "requires": ["docker", "git"],
+  "launch": {"cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "stg", "up", "__APP__", "--build"], "timeout": 600},
+  "stop": {"cmd": ["%AVK_HOME%\\venv\\Scripts\\python.exe", "-m", "avk", "stg", "down", "__APP__"], "timeout": 120},
+  "open": "http://127.0.0.1:__STG_PORT__/",
+  "status": {"url": "http://127.0.0.1:__STG_PORT__/healthz"},
+  "docs": "README.md",
+  "notes": "Port __STG_PORT__ is this app's stg port in the platform's platform.yaml.",
+  "checks": [
+    {"name": "HTML parses, local links resolve", "cmd": ["{python}", "../wall/tools/static_check.py", "."], "timeout": 60}
+  ]
+}

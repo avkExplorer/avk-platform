@@ -61,13 +61,15 @@ class Docker:
         code, out, err = self._run(argv, None)
         return code, (out + err).strip()[-400:]
 
-    def start_app(self, name: str, ref: str, env_file: Path, labels: dict[str, str],
+    def start_app(self, name: str, ref: str, env_file: Path | None, labels: dict[str, str],
                   truststore: Path | None = None) -> tuple[bool, str]:
         self.remove(name)
         argv = ["docker", "run", "-d", "--name", name, "--network", NETWORK, "--restart", "unless-stopped",
                 "--read-only", "--tmpfs", "/tmp:rw,nosuid,size=64m", "--cap-drop", "ALL",
-                "--security-opt", "no-new-privileges:true", "--memory", "512m", "--cpus", "1", "--pids-limit", "256",
-                "--env-file", str(env_file), "--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3"]
+                "--security-opt", "no-new-privileges:true", "--memory", "512m", "--cpus", "1", "--pids-limit", "256"]
+        if env_file is not None:                       # none for an app without secrets (a static site)
+            argv += ["--env-file", str(env_file)]
+        argv += ["--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3"]
         for k, v in labels.items():
             argv += ["--label", f"{k}={v}"]
         if truststore is not None:

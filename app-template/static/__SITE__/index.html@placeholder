@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__APP__</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#14181f; --muted:#4a5565; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --fg:#e8ebf0; --muted:#a9b2c0; } }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px; background:var(--bg); color:var(--fg);
+         font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:32rem; }
+  h1 { font-size:2rem; margin:0 0 .5rem; }
+  p { margin:0; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>__APP__</h1>
+  <p>This site is running on the AVK platform. Replace this page with your own.</p>
+</main>
+</body>
+</html>

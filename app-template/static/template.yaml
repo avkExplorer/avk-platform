@@ -1,0 +1,3 @@
+# Rules for the static template: every file is created (see app-template/spring/template.yaml for the syntax). The starter page
+# `__SITE__/index.html@placeholder` exists only for a new site; an adopted site keeps its own pages.
+files: []
