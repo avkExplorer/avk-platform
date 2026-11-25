@@ -8,7 +8,7 @@ import json
 import ssl
 import sys
 
-from avk import __version__, config, dbadmin, doctor, landing, mail, prod, secretgen, tf
+from avk import __version__, config, dbadmin, doctor, landing, mail, prod, secretgen, stg, tf
 from avk.deployer import agent
 
 
@@ -46,13 +46,6 @@ def _log(event: str, **fields) -> None:
     line = {"ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "event": event, **fields}
     with (logs / "avk.log").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(line) + "\n")
-
-
-def cmd_stack(args) -> int:
-    # Placeholder until the stacks exist (prod: Phase 1 tunnel, Phase 4 apps; stg: Phase 4).
-    _log(f"{args.env}.{args.action}", note="stub until Phase 1/4")
-    print(f"{args.env} {args.action}: the {args.env} stack is built in a later phase; nothing to do yet (logged).")
-    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -108,11 +101,19 @@ def build_parser() -> argparse.ArgumentParser:
     tsp.add_argument("--yes", action="store_true")
     tsp.set_defaults(func=mail.test_send)
 
-    stgp = sub.add_parser("stg", help="stg stack (Phase 4)").add_subparsers(dest="action", required=True)
+    stgp = sub.add_parser("stg", help="stg stack on 127.0.0.1 (pg-stg, Mailpit, index, apps)").add_subparsers(dest="action", required=True)
     for action in ("up", "down", "status"):
         a = stgp.add_parser(action)
         a.add_argument("app", nargs="?")
-        a.set_defaults(func=cmd_stack, env="stg")
+        if action == "up":
+            a.add_argument("--build", action="store_true", help="rebuild the app from its sibling folder")
+            a.add_argument("--digest", help="run a published image by digest instead of a local build")
+        a.set_defaults(func=stg.main)
+
+    seedp = sub.add_parser("seed", help="load synthetic data into stg (never prod)")
+    seedp.add_argument("app")
+    seedp.add_argument("--env", default="stg")
+    seedp.set_defaults(func=stg.seed)
     return p
 
 

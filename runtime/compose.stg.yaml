@@ -1,0 +1,79 @@
+# Stg stack (project avk-stg): test copies of everything, bound to 127.0.0.1 only, on its own network.
+# It shares no network with prod, so `pg-prod` does not even resolve from here. App containers are started by
+# `avk stg up` (docker run with the same hardening as prod), not listed here. All images are pinned by digest.
+
+name: avk-stg
+
+x-hardened: &hardened
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  pg-stg:
+    <<: *hardened
+    image: postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_admin_password
+      POSTGRES_INITDB_ARGS: --data-checksums
+    secrets: [pg_admin_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    ports:
+      - "127.0.0.1:5440:5432"
+    networks: [stg]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    mem_limit: 512m
+    cpus: 1.0
+
+  mailpit:
+    <<: *hardened
+    image: axllent/mailpit@sha256:23a2ef85bc50853ab3093645d1d64679afd8887e89da5e48a88940c172591a4e
+    ports:
+      - "127.0.0.1:4811:8025" # web UI
+      - "127.0.0.1:4812:1025" # SMTP catcher
+    tmpfs: [/tmp]
+    networks: [stg]
+    mem_limit: 128m
+    cpus: 0.25
+
+  # Index page listing the registered apps (generated from platform.yaml by `avk stg up`).
+  index:
+    <<: *hardened
+    image: nginxinc/nginx-unprivileged@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
+    ports:
+      - "127.0.0.1:4800:8080"
+    volumes:
+      - type: bind
+        source: ${AVK_HOME_SLASH}/state/stg/index
+        target: /usr/share/nginx/html
+        read_only: true
+    tmpfs: [/tmp]
+    networks: [stg]
+    mem_limit: 64m
+    cpus: 0.25
+
+secrets:
+  pg_admin_password:
+    file: ${AVK_HOME_SLASH}/secrets/stg/postgres-admin.password
+
+volumes:
+  pgdata:
+    name: avk-stg-pgdata
+
+networks:
+  stg:
+    name: avk-stg
