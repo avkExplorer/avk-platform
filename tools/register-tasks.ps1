@@ -22,8 +22,10 @@ function Register([string]$name, [string]$taskArgs, $trigger) {
 }
 $labels = @{ 'deploy-agent' = 'deploy agent'; 'backup-run' = 'backup nightly'; 'backup-verify' = 'backup verify' }
 
+# Two triggers: one that repeats every 5 minutes starting now (it keeps running across reboots), and one at logon so the
+# first run after a login is immediate. (A logon trigger's repetition alone would not start until the next logon.)
+$repeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
 $logon = New-ScheduledTaskTrigger -AtLogOn -User $user
-$logon.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)).Repetition
-Register 'deploy-agent' 'deploy-agent' $logon
+Register 'deploy-agent' 'deploy-agent' @($repeat, $logon)
 Register 'backup-run' 'backup run' (New-ScheduledTaskTrigger -Daily -At '02:30')
 Register 'backup-verify' 'backup verify' (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At '03:30')
