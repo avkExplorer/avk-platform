@@ -62,6 +62,17 @@ finding.
 Green path: pull request https://github.com/avkExplorer/hello/pull/4 (all gates green) and release run
 https://github.com/avkExplorer/hello/actions/runs/45513801212 (image, signature, SBOM, ci stack, approval).
 
+## Deployer proofs (Phase 4)
+
+| Proof | What happened | Evidence |
+|---|---|---|
+| Manual rollback | After release `33a7d7…` went live on blue, `avk rollback hello` put the previous digest `e74a8b…` back on green in about 18 s. The public ping answered `pong` before and after. | `deployer.log` 2026-11-25 03:39 to 03:40 (`rollback: true`, `deploy_success`) |
+| Automatic rollback | Release `c16183…` (ping creates a temp table, forbidden for `hello_rw`) passed CI and was owner-approved. Trust checks passed, migration ran, then the pre-switch smoke test got `GET /api/v1/ping returned 500`. Traffic never moved. GitHub Deployment 8047786637 shows `failure`. | `deployer.log` 2026-11-25 03:49 to 03:50; run https://github.com/avkExplorer/hello/actions/runs/45541635726 |
+| Zero downtime | A poller hit the public ping twice a second from before the merge until after the failed deploy: 857 requests, 857 returned 200, none failed. | poll log, 21:40:41 to 21:50:12 (UTC-6) |
+
+The broken change was merged to prove this path. Production stayed on `e74a8b…`. The next real release replaces the
+broken code on `main`.
+
 ## How a release reaches production (trust chain)
 
 The PC only ever pulls. A GitHub Deployment is a trigger, never evidence: every merge produces a signed image before
