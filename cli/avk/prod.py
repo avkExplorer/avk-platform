@@ -51,12 +51,19 @@ def prepare() -> str | None:
     from avk import secretgen
 
     secretgen.ensure_platform(("prod",))  # the database password file the compose file mounts
+    from avk import auth
     from avk.deployer.traefik import VolumeRoutes
 
+    if auth.prepare_stack("prod") != 0:                      # Keycloak image and secret files
+        return "could not prepare Keycloak (see above)"
     routes = VolumeRoutes()
     routes.ensure_volume()
-    # Real app routes are written by the deployer. The Phase 1 placeholder route is removed if an older run left it.
+    # App routes are written by the deployer. The Phase 1 placeholder route is removed if an older run left it.
     routes.restore("phase1-test", None)
+    try:
+        routes.write("keycloak", auth.route_yaml(auth.auth_host()))   # the shared login's public route
+    except RuntimeError as exc:
+        return str(exc)
     return None
 
 
@@ -76,7 +83,13 @@ def main(args) -> int:
         if (err := prepare()):
             print(f"fail  {err}")
             return 1
-        code = compose(["up", "-d", "--wait", "--wait-timeout", "120"]).returncode
+        from avk import dbadmin
+
+        if compose(["up", "-d", "--wait", "--wait-timeout", "120", "pg-prod"]).returncode != 0:
+            return 1
+        if dbadmin.create_keycloak("prod") != 0:              # its database must exist before Keycloak starts
+            return 1
+        code = compose(["up", "-d", "--wait", "--wait-timeout", "180"]).returncode
         if code != 0:
             compose(["ps"])
         else:

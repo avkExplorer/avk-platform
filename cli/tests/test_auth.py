@@ -43,7 +43,7 @@ def test_stg_mail_goes_to_mailpit_and_prod_mail_to_resend(tmp_path, monkeypatch)
     stg = auth.smtp_settings("stg")
     assert stg["host"] == "mailpit" and stg["auth"] == "false" and stg["from"] == "noreply@notify.avkaiexplorer.com"
     monkeypatch.setenv("AVK_HOME", str(tmp_path))
-    mail = tmp_path / "secrets" / "platform" / "mail.env"
+    mail = tmp_path / "secrets" / "prod" / "platform-mail.env"
     mail.parent.mkdir(parents=True)
     mail.write_text("RESEND_API_KEY=re_test_key\n", encoding="utf-8")
     prod = auth.smtp_settings("prod")
@@ -81,6 +81,31 @@ def test_keycloak_database_sql_is_least_privilege():
     assert "NOSUPERUSER NOCREATEDB NOCREATEROLE" in sql
     assert "REVOKE ALL ON DATABASE keycloak FROM PUBLIC" in sql
     assert "GRANT CONNECT ON DATABASE keycloak TO keycloak" in sql
+
+
+# ---------------------------------------------------------------------------------------------- the public route
+def test_public_route_blocks_admin_paths_and_the_master_realm():
+    text = auth.route_yaml("auth.avkaiexplorer.com")
+    for path in ("/admin", "/realms/master", "/metrics", "/health"):
+        assert f"PathPrefix(`{path}`)" in text
+    blocked = text.split("keycloak-blocked:", 1)[1].split("middlewares:", 2)[0]
+    assert "priority: 2000" in blocked and "keycloak-hide" in text    # beats the normal route (1000) and rewrites to a 404
+    assert "stsSeconds: 31536000" in text and "frameDeny: true" in text
+
+
+def test_prod_keycloak_service_publishes_only_the_loopback_admin_port():
+    from avk import config
+    text = (config.REPO_ROOT / "runtime" / "compose.prod.yaml").read_text(encoding="utf-8")
+    block = text.split("\n  keycloak:", 1)[1].split("\nsecrets:", 1)[0]
+    assert '"127.0.0.1:4910:8080"' in block
+    assert "KC_HOSTNAME: https://auth.avkaiexplorer.com" in block and "KC_HOSTNAME_ADMIN: http://127.0.0.1:4910" in block
+    assert "KC_PROXY_HEADERS: xforwarded" in block
+    assert block.count("ports:") == 1 and "9000" in block            # management port is never published
+
+
+def test_platform_yaml_lists_the_login_host_for_terraform():
+    from avk import config
+    assert "auth.avkaiexplorer.com" in config.load().raw.get("platform_hosts", [])
 
 
 # ---------------------------------------------------------------------------------------------- the compose files

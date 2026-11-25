@@ -13,8 +13,12 @@ signing:
   approval_predicate_type: https://avkaiexplorer.com/attestations/prod-approval/v1
   allowed_refs: [refs/heads/main]
 
+# Hosts the platform itself serves (Terraform makes a DNS record and tunnel route for each).
+platform_hosts:
+  - auth.avkaiexplorer.com   # shared login (Keycloak); admin paths and the master realm are blocked here (Phase 5)
+
 apps:
-  - name: hello              # pilot service (Spring Boot); a test container serves its hostname until Phase 4
+  - name: hello             # pilot service (Spring Boot); a test container serves its hostname until Phase 4
     type: web
     stg_port: 4820
     repo: avkExplorer/hello

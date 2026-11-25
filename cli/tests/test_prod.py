@@ -32,17 +32,19 @@ class FakeRoutes:
 FakeRoutes.removed = []
 
 
-def test_prepare_writes_no_placeholder_route_and_clears_the_old_one(tmp_path, monkeypatch):
+def test_prepare_routes_only_the_login_host_and_clears_the_old_placeholder(tmp_path, monkeypatch):
     monkeypatch.setenv("AVK_HOME", str(tmp_path))
     monkeypatch.setattr("avk.deployer.traefik.VolumeRoutes", FakeRoutes)
+    monkeypatch.setattr("avk.auth.prepare_stack", lambda env: 0)      # tests must never reach Docker
     FakeRoutes.written = {}
     FakeRoutes.removed = []
     token = tmp_path / "secrets" / "platform" / "tunnel.token"
     token.parent.mkdir(parents=True)
     token.write_text("x")
     assert prod.prepare() is None
-    assert FakeRoutes.written == {}                 # real routes belong to the deployer
-    assert FakeRoutes.removed == ["phase1-test"]    # a placeholder left by an older run is removed
+    assert list(FakeRoutes.written) == ["keycloak"]  # app routes belong to the deployer
+    assert "Host(`auth.avkaiexplorer.com`)" in FakeRoutes.written["keycloak"]
+    assert FakeRoutes.removed == ["phase1-test"]     # a placeholder left by an older run is removed
 
 
 def test_status_rows_parses_compose_json():
@@ -54,4 +56,5 @@ def test_status_rows_parses_compose_json():
 def test_compose_file_pins_every_image_by_digest():
     text = (config.REPO_ROOT / "runtime" / "compose.prod.yaml").read_text(encoding="utf-8")
     images = [ln.split("image:", 1)[1].split()[0] for ln in text.splitlines() if ln.strip().startswith("image:")]
-    assert images and all("@sha256:" in i for i in images)
+    # Every image is pinned by digest, except the locally built `avk/keycloak`, whose base is pinned in its Dockerfile.
+    assert images and all("@sha256:" in i or i.startswith("avk/keycloak:") for i in images)

@@ -36,6 +36,9 @@ services:
     image: traefik@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d # 3.6.25
     command:
       - --entrypoints.web.address=:80
+      # cloudflared (a private Docker address) forwards Cloudflare's X-Forwarded-Proto: https. Without this Traefik replaces
+      # it with `http`, and Keycloak would advertise http:// endpoints. Only private ranges are trusted.
+      - --entrypoints.web.forwardedheaders.trustedips=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       - --entrypoints.ping.address=:8082
       - --ping=true
       - --ping.entrypoint=ping
@@ -90,6 +93,42 @@ services:
       start_period: 20s
     mem_limit: 768m
     cpus: 1.0
+
+  # Shared login (Keycloak). Public: only the `avk` realm, through Traefik at https://auth.avkaiexplorer.com (Traefik answers
+  # 404 for /admin and the master realm). The admin console is published ONLY on 127.0.0.1:4910 and uses its own
+  # hostname (KC_HOSTNAME_ADMIN), so it works locally even though /admin is blocked on the public name.
+  # The image is built on this PC by `avk auth build` (base digest pinned in runtime/keycloak/Dockerfile).
+  keycloak:
+    <<: *hardened
+    image: avk/keycloak:26.8.2
+    command: ["start", "--optimized"]
+    env_file:
+      - ${AVK_HOME_SLASH}/secrets/prod/keycloak.env
+    environment:
+      KC_DB_URL: jdbc:postgresql://pg-prod:5432/keycloak
+      KC_HOSTNAME: https://auth.avkaiexplorer.com
+      KC_HOSTNAME_ADMIN: http://127.0.0.1:4910
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_LOG_CONSOLE_OUTPUT: json
+      JAVA_OPTS_KC_HEAP: -XX:InitialRAMPercentage=40 -XX:MaxRAMPercentage=70
+    ports:
+      - "127.0.0.1:4910:8080"
+    tmpfs:
+      - /tmp
+      - /opt/keycloak/data:uid=1000,gid=0,mode=0770
+    depends_on:
+      pg-prod: {condition: service_healthy}
+    networks: [prod]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    mem_limit: 1g
+    cpus: 1.5
 
 secrets:
   tunnel_token:
