@@ -344,3 +344,10 @@ def test_footer_markers_go_before_the_last_body_tag_not_one_inside_a_script_stri
     assert "'</body></html>';</script>" in text                       # the JavaScript string is untouched
     assert text.index("avk-legal-footer:start") > text.index("<p>real</p>")
     assert "/legal/footer.css" in text and "/legal/legal.css" not in text      # the scoped stylesheet: no global restyling of the page
+
+
+def test_the_static_dockerfile_names_its_user_so_the_dockerfile_scan_passes(tmp_path):
+    template.render(tmp_path / "s", "demo", template.flags_for("static"), "avkExplorer", "avkaiexplorer.com", "main", 4890,
+                    template_dir=template.template_dir_for("static"))
+    lines = [l.strip() for l in (tmp_path / "s/Dockerfile").read_text(encoding="utf-8").splitlines()]
+    assert "USER 101:101" in lines and any(l.startswith("HEALTHCHECK") for l in lines) and lines[0].count("@sha256:") == 1   # Checkov CKV_DOCKER_3, _2 and a pinned base
